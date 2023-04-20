@@ -1,0 +1,22 @@
+[package]
+name = "minecraft"
+version = "0.1.0"
+edition = "2021"
+# wasm-opt = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+three-d = { version = "0.15.0", features = ["egui-gui"] }
+three-d-asset = { version = "0.5", features = ["obj", "png", "jpeg", "http"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+log = "0.4"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+console_log = "0.2"

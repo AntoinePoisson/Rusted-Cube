@@ -1,0 +1,3 @@
+{
+    "rust-analyzer.diagnostics.warningsAsHint": ["dead_code"]
+}
