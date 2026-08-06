@@ -1,0 +1,14 @@
+[package]
+name = "rusted-cube-server"
+version = "0.1.0"
+edition = "2021"
+description = "LAN server for Rusted Cube: serves the game and relays player state"
+license = "MIT"
+
+# No dependencies at all. The HTTP handling, the WebSocket handshake and framing
+# are implemented on std, and the protocol module is shared with the client by
+# including its source file directly.
+[dependencies]
+
+[profile.release]
+opt-level = 2

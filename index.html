@@ -1,38 +1,79 @@
-<html>
+<!doctype html>
+<!-- data-multiplayer is flipped to "1" by the bundled server as it serves this
+     file. A static host leaves it at "0", and the game never opens a socket it
+     knows cannot connect. -->
+<html lang="en" data-multiplayer="0">
   <head>
-    <meta content="text/html;charset=utf-8" http-equiv="Content-Type"/>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Rusted Cube is a small voxel sandbox powered by Rust, WebAssembly and WebGL2."
+    />
+    <meta name="theme-color" content="#92b4be" />
+    <title>Rusted Cube — Rust voxel sandbox</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <!-- Without these the browser only discovers the glue module after parsing
+         bootstrap.js, and the binary only after parsing the glue: three
+         sequential round trips before anything can be drawn. -->
+    <link rel="modulepreload" href="./pkg/rusted_cube.js" />
+    <link
+      rel="preload"
+      href="./pkg/rusted_cube_bg.wasm"
+      as="fetch"
+      type="application/wasm"
+      crossorigin="anonymous"
+    />
   </head>
   <body>
-    <canvas style="position: absolute;top:0;bottom: 0;left: 0;right: 0;margin:auto;"></canvas>
-    <!-- Note the usage of `type=module` here as this is an ES6 module -->
-    <script type="module">
-      // Use ES module import syntax to import functionality from the module
-      // that we have compiled.
-      //
-      // Note that the `default` import is an initialization function which
-      // will "boot" the module and make it ready to use. Currently browsers
-      // don't support natively imported WebAssembly as an ES module, but
-      // eventually the manual initialization won't be required!
-      import init from './pkg/web.js';
+    <main class="game-shell">
+      <canvas id="game-canvas" aria-label="Rusted Cube game world" tabindex="0"></canvas>
 
-      async function run() {
-        // First up we need to actually load the wasm file, so we use the
-        // default export to inform it where the wasm file is located on the
-        // server, and then we wait on the returned promise to wait for the
-        // wasm to be loaded.
-        // It may look like this: `await init('./pkg/without_a_bundler_bg.wasm');`,
-        // but there is also a handy default inside `init` function, which uses
-        // `import.meta` to locate the wasm file relatively to js file
-        //
-        // Note that instead of a string here you can also pass in an instance
-        // of `WebAssembly.Module` which allows you to compile your own module.
-        // Also note that the promise, when resolved, yields the wasm module's
-        // exports which is the same as importing the `*_bg` module in other
-        // modes
-        await init('./pkg/web_bg.wasm');
-      }
+      <div class="shade" aria-hidden="true"></div>
+      <div class="crosshair" aria-hidden="true"></div>
+      <div id="hand" class="hand" aria-hidden="true">
+        <div class="hand__arm"></div>
+      </div>
 
-      run();
-    </script>
+      <section class="intro" aria-label="Game controls">
+        <p class="eyebrow">Rust + WebAssembly + WebGL2</p>
+        <h1><span class="title__line">Rusted</span><span class="title__line">Cube</span></h1>
+        <p class="intro__copy">
+          An endless chunked world generated and simulated in Rust. Click anywhere to explore.
+        </p>
+        <dl class="controls">
+          <div><dt>Move</dt><dd>W A S D</dd></div>
+          <div><dt>Look</dt><dd>Mouse</dd></div>
+          <div><dt>Jump</dt><dd>Space</dd></div>
+          <div><dt>Break</dt><dd>Left click</dd></div>
+          <div><dt>Place</dt><dd>Right click</dd></div>
+          <div><dt>Run</dt><dd>Shift</dd></div>
+          <div><dt>New world</dt><dd>R</dd></div>
+        </dl>
+        <p class="intro__hint">Click to capture the cursor</p>
+      </section>
+
+      <div class="hud" aria-hidden="true">
+        <span class="hud__world">
+          <span id="seed">SEED 1337</span>
+          <span id="chunks">CHUNKS 0/49</span>
+          <span id="fps">— FPS</span>
+          <span id="mesh">MESH 0.00 MS</span>
+          <span id="vertices">TRIS 0K</span>
+          <span id="held">HOLDING —</span>
+          <span id="players">SOLO</span>
+        </span>
+        <span>ESC TO RELEASE</span>
+      </div>
+
+      <div id="loader" class="loader" role="status">
+        <span class="loader__cube"></span>
+        <span>Generating terrain</span>
+      </div>
+    </main>
+
+    <noscript>This game needs JavaScript to load its WebAssembly module.</noscript>
+    <script type="module" src="./bootstrap.js"></script>
   </body>
 </html>

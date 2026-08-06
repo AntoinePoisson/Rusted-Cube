@@ -1,0 +1,60 @@
+# Rusted Cube
+
+> A voxel sandbox running in the browser. Terrain generation, the game loop, player
+> physics, collision, block raycasting and mesh building are written in Rust and compiled
+> to WebAssembly; rendering talks to WebGL2 directly, with no 3D engine such as Three.js.
+
+Open the page and click to capture the cursor. Move with `W`/`A`/`S`/`D`, jump with
+`Space`, sprint with left `Shift`, break a block with left click, place the block you are
+holding with right click, and press `R` for a new world. The block you are aiming at is
+outlined.
+
+Key facts, so they are not inferred incorrectly:
+
+- The world is a 7x7 window of 16x48x16 chunks that follows the player. Chunks outside it
+  are unloaded; player edits are stored per chunk and reapplied when a chunk returns.
+- Meshing is greedy and per-chunk, with per-vertex ambient occlusion and vertical skylight
+  baked in. Vertices are two packed `u32` each, and every chunk shares one immutable index
+  buffer. Chunks are frustum culled.
+- There is a day/night cycle driving sun direction and sky colour, but **no shadow
+  mapping**: the sun moves and cast shadows do not follow it.
+- LAN multiplayer exists but needs the bundled server in `server/`, which has **no
+  dependencies at all** — HTTP, the WebSocket handshake and the frame codec are written on
+  `std`. The published GitHub Pages build is static, so it is single-player.
+- The page **renders** on a phone but is **not playable** there: looking around needs
+  pointer lock and moving needs a keyboard. There are no touch controls.
+- The project builds on Rust 1.67; CI pins 1.76 because Rust 1.82 changed the WebAssembly
+  ABI in a way that breaks the wasm-bindgen release used here.
+
+## Source
+
+- [README](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/README.md): build
+  instructions, controls, technical notes and measured performance figures
+- [world.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/world.rs):
+  chunks, terrain and tree generation, lighting, DDA raycasting, greedy meshing
+- [renderer.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/renderer.rs):
+  WebGL2 renderer, frustum culling, shaders, avatars and the block outline
+- [game.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/game.rs):
+  browser events, frame loop and the per-frame meshing budget
+- [player.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/player.rs):
+  camera, movement and collision
+- [perlin.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/perlin.rs):
+  seeded 2D Perlin and ridged noise
+
+## Multiplayer
+
+- [protocol.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/protocol.rs):
+  wire format, JSON encoded and parsed by hand, shared with the server by including the
+  same source file
+- [net.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/net.rs):
+  WebSocket client, optional — a failed connection leaves the game single-player
+- [server/src/main.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/server/src/main.rs):
+  static files, connection threads and authoritative world state
+- [server/src/websocket.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/server/src/websocket.rs):
+  handshake and frame codec on `std`
+
+## Optional
+
+- [LICENSE](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/LICENSE): MIT
+- [deploy-pages.yml](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/.github/workflows/deploy-pages.yml):
+  builds, tests and publishes to GitHub Pages on `main` and `prod`
