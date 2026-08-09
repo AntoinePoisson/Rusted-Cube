@@ -12,12 +12,10 @@ crate-type = ["cdylib", "rlib"]
 console_error_panic_hook = "0.1.7"
 glam = "0.21.3"
 js-sys = "=0.3.64"
-# Pinned exactly: this project builds on Rust 1.67, and current releases of the
-# proc-macro crates these pull in require a newer compiler.
+# pinned, newer releases need a newer compiler than 1.67
 wasm-bindgen = "=0.2.87"
 
-# The LAN server lives in `server/` as its own crate, excluded here so the game
-# keeps building on this toolchain regardless of the server's dependencies.
+# the server is its own crate
 [workspace]
 exclude = ["server"]
 
@@ -51,6 +49,6 @@ features = [
 [profile.release]
 codegen-units = 1
 lto = true
-# Speed over size: meshing and noise generation dominate the frame budget.
+# speed over size, meshing and noise dominate the frame budget
 opt-level = 3
 strip = true

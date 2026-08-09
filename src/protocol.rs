@@ -1,19 +1,14 @@
-//! Wire format shared by the browser client and the LAN server.
-//!
-//! Messages are JSON, encoded and parsed by hand. Pulling in serde would drag
-//! `serde_derive` and its proc-macro chain into the build, and those releases
-//! require a newer compiler than this project targets. Doing it here costs a
-//! couple of hundred lines, keeps the wasm bundle smaller, and the format stays
-//! readable in the browser's network panel.
+//! Wire format shared by the client and the LAN server. JSON, encoded and
+//! parsed by hand: serde drags `serde_derive` and its proc-macro chain in, and
+//! those need a newer compiler than this builds on. Costs a couple hundred
+//! lines and keeps the wasm smaller.
 
 pub type PlayerId = u32;
 
-/// Default port for the bundled server. Deliberately not 8080, which is far too
-/// commonly already taken on a developer machine.
+/// not 8080, that one is always taken already
 pub const DEFAULT_PORT: u16 = 8118;
 
-/// How often a client reports its position, in milliseconds. Every frame would
-/// be wasteful; the remote side interpolates between updates.
+/// ms between position reports, the other side interpolates
 pub const MOVE_INTERVAL_MS: f64 = 50.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -23,12 +18,11 @@ pub struct Pose {
     pub pitch: f32,
 }
 
-/// A single block edit, as stored by the server and replayed to newcomers.
+/// Stored by the server and replayed to newcomers.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Edit {
     pub position: [i32; 3],
-    /// `Block` discriminant, kept as a plain integer so this module does not
-    /// depend on the world.
+    /// `Block` discriminant, plain int so this doesn't depend on the world
     pub block: u8,
 }
 
@@ -40,16 +34,14 @@ pub enum ClientMessage {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ServerMessage {
-    /// Sent once on connection: everything needed to reproduce the server's
-    /// world exactly.
+    /// Sent once on connect, everything needed to rebuild the server's world.
     Welcome {
         id: PlayerId,
         seed: u32,
         edits: Vec<Edit>,
         players: Vec<(PlayerId, Pose)>,
     },
-    /// Tells everyone already connected that someone arrived. Without it a
-    /// sitting player would stay invisible until their first move.
+    /// Without this a player who doesn't move stays invisible to everyone.
     PlayerJoined {
         id: PlayerId,
         pose: Pose,
@@ -66,7 +58,7 @@ pub enum ServerMessage {
     },
 }
 
-// ---------------------------------------------------------------- encoding --
+// --- encoding
 
 fn write_pose(out: &mut String, pose: &Pose) {
     out.push_str(&format!(
@@ -204,11 +196,10 @@ impl ServerMessage {
     }
 }
 
-// ----------------------------------------------------------------- parsing --
+// --- parsing
 
-/// Just enough JSON for this protocol: objects, arrays, numbers and plain
-/// strings. Deliberately not a general parser — it rejects anything it does not
-/// understand rather than guessing.
+/// Just enough JSON for this protocol: objects, arrays, numbers, plain strings.
+/// Not a general parser, it rejects whatever it doesn't understand.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Json {
     Number(f64),
@@ -225,7 +216,7 @@ impl Json {
         let mut cursor = 0;
         let value = parse_value(&bytes, &mut cursor)?;
         skip_whitespace(&bytes, &mut cursor);
-        // Trailing junk means the message is not what it claims to be.
+        // trailing junk means it's not what it claims to be
         if cursor == bytes.len() {
             Some(value)
         } else {
@@ -398,9 +389,9 @@ fn parse_string(bytes: &[char], cursor: &mut usize) -> Option<String> {
     *cursor += 1;
     let mut text = String::new();
     loop {
-        let character = *bytes.get(*cursor)?;
+        let ch = *bytes.get(*cursor)?;
         *cursor += 1;
-        match character {
+        match ch {
             '"' => return Some(text),
             '\\' => {
                 let escaped = *bytes.get(*cursor)?;
@@ -414,11 +405,11 @@ fn parse_string(bytes: &[char], cursor: &mut usize) -> Option<String> {
                     '"' => '"',
                     '\\' => '\\',
                     '/' => '/',
-                    // \uXXXX is not used by this protocol.
+                    // \uXXXX isn't used here
                     _ => return None,
                 });
             }
-            _ => text.push(character),
+            _ => text.push(ch),
         }
     }
 }
@@ -517,8 +508,8 @@ mod tests {
         assert_eq!(ServerMessage::decode(&message.encode()), Some(message));
     }
 
-    /// Anything off the network is untrusted: malformed input must return None
-    /// rather than panic.
+    // anything off the network is untrusted, malformed input returns None and
+    // must never panic
     #[test]
     fn malformed_input_is_rejected() {
         for text in [

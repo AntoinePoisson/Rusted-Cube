@@ -9,12 +9,9 @@ use web_sys::{
 
 use crate::world::{ChunkPosition, CHUNK_SIZE, RENDER_DISTANCE, WORLD_HEIGHT};
 
-/// Two u32 per vertex: position + normal + ambient occlusion, then material +
-/// skylight. Down from the 36 bytes a float layout would need.
+/// two u32 per vertex, down from the 36 bytes a float layout would need
 const VERTEX_SIZE: i32 = 8;
 
-/// Upper bound on quads in a single chunk mesh, used to size the shared index
-/// buffer once at startup.
 const MAX_QUADS: usize = 65_536;
 
 struct ChunkMesh {
@@ -37,8 +34,8 @@ pub struct Renderer {
     sun_color_uniform: WebGlUniformLocation,
     sky_color_uniform: WebGlUniformLocation,
     fog_range_uniform: WebGlUniformLocation,
-    /// Separate pipeline for moving entities: the chunk vertex format packs
-    /// positions as chunk-local bytes, which cannot express a walking avatar.
+    /// Sperate pipeline for moving stuff: the chunk format packs positions as
+    /// chunk-local bytes, which can't express a walking avatar.
     entity_program: WebGlProgram,
     entity_vertex_array: WebGlVertexArrayObject,
     outline_vertex_array: WebGlVertexArrayObject,
@@ -159,16 +156,15 @@ impl Renderer {
 
         self.gl.bind_vertex_array(Some(&vertex_array));
         self.gl.bind_buffer(Gl::ARRAY_BUFFER, Some(&vertex_buffer));
-        // Integer attributes: the shader unpacks the bit fields itself, so no
-        // normalisation or float conversion happens on the way in.
+        // integer attributes, the shader unpacks the bit fields itself
         self.gl.enable_vertex_attrib_array(0);
         self.gl
             .vertex_attrib_i_pointer_with_i32(0, 1, Gl::UNSIGNED_INT, VERTEX_SIZE, 0);
         self.gl.enable_vertex_attrib_array(1);
         self.gl
             .vertex_attrib_i_pointer_with_i32(1, 1, Gl::UNSIGNED_INT, VERTEX_SIZE, 4);
-        // The index buffer is shared by every chunk; binding it inside the VAO
-        // means each draw call needs no further setup.
+        // binding the shared index buffer inside the VAO means each draw call
+        // needs no further setup
         self.gl
             .bind_buffer(Gl::ELEMENT_ARRAY_BUFFER, Some(&self.index_buffer));
         self.gl.bind_vertex_array(None);
@@ -185,8 +181,7 @@ impl Renderer {
         })
     }
 
-    /// Releasing GPU objects here is what keeps memory flat while the player
-    /// walks: without it every unloaded chunk would leak a buffer and a VAO.
+    /// Without this every unloaded chunk leaks a buffer and a VAO.
     pub fn drop_chunk(&mut self, position: ChunkPosition) {
         if let Some(mesh) = self.chunks.remove(&position) {
             self.gl.delete_buffer(Some(&mesh.vertex_buffer));
@@ -214,11 +209,7 @@ impl Renderer {
         self.visible_chunks
     }
 
-    /// Paints the canvas with the sky before any terrain exists.
-    ///
-    /// Generating the opening chunks takes long enough that the canvas would
-    /// otherwise stay blank until then, and since it is the largest element on
-    /// the page that delays the largest contentful paint by roughly a second.
+    // canvas is the largest element on the page, a blank one delays the LCP
     pub fn present_sky(&mut self, sky: &SkyState) {
         self.resize_to_display();
         self.gl
@@ -226,8 +217,7 @@ impl Renderer {
         self.gl.clear(Gl::COLOR_BUFFER_BIT | Gl::DEPTH_BUFFER_BIT);
     }
 
-    /// Matches the drawing buffer to the displayed size, capped at 2x so a
-    /// high-density screen does not quadruple the fragment work.
+    // capped at 2x, a retina screen would quadruple the fragment work
     fn resize_to_display(&mut self) {
         let width = self.canvas.client_width().max(1) as u32;
         let height = self.canvas.client_height().max(1) as u32;
@@ -268,8 +258,6 @@ impl Renderer {
         self.gl.clear(Gl::COLOR_BUFFER_BIT | Gl::DEPTH_BUFFER_BIT);
         self.gl.use_program(Some(&self.program));
 
-        // The far plane used to sit at 180 while geometry stops well before
-        // that, wasting depth precision on empty space.
         let far = far_plane();
         let projection = Mat4::perspective_rh_gl(
             72_f32.to_radians(),
@@ -340,8 +328,6 @@ impl Renderer {
         self.gl.bind_vertex_array(None);
     }
 
-    /// Binds the entity program and the uniforms shared by everything drawn
-    /// with it.
     fn begin_entity_pass(&self, sky: &SkyState) {
         self.gl.use_program(Some(&self.entity_program));
         self.gl.uniform_matrix4fv_with_f32_array(
@@ -357,14 +343,12 @@ impl Renderer {
         );
     }
 
-    /// Outlines the block the player is aiming at, so breaking and placing are
-    /// not guesswork. One draw call of twelve lines.
     pub fn render_block_highlight(&self, cell: IVec3, sky: &SkyState) {
         self.begin_entity_pass(sky);
         self.gl.bind_vertex_array(Some(&self.outline_vertex_array));
 
-        // Scaled a touch beyond the block so the edges win the depth test
-        // against the faces they trace.
+        // slightly bigger than the block so the edges win the depth test against
+        // the faces they trace
         let center = Vec3::new(cell.x as f32, cell.y as f32, cell.z as f32) + Vec3::splat(0.5);
         let model = Mat4::from_translation(center) * Mat4::from_scale(Vec3::splat(1.006));
         self.gl.uniform_matrix4fv_with_f32_array(
@@ -378,8 +362,7 @@ impl Renderer {
         self.gl.bind_vertex_array(None);
     }
 
-    /// Draws remote players. Called after `render`, which leaves the matrices
-    /// and sky state this needs already computed.
+    /// Call after `render`, it reuses the matrices and sky state computed there.
     pub fn render_avatars(&self, avatars: &[Avatar], sky: &SkyState) {
         if avatars.is_empty() {
             return;
@@ -389,7 +372,7 @@ impl Renderer {
         self.gl.bind_vertex_array(Some(&self.entity_vertex_array));
 
         for avatar in avatars {
-            // The model faces +Z, so rotate that onto the avatar's forward.
+            // the model faces +Z, rotate that onto the avatar's forward
             let rotation = Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2 - avatar.yaw);
             let translation = Mat4::from_translation(avatar.position);
 
@@ -413,15 +396,14 @@ impl Renderer {
     }
 }
 
-/// One cuboid of an avatar: offset from the player's feet, half extents, and a
-/// shade multiplier so limbs read apart from the torso.
+/// offset from the feet, half extents, shade so limbs read apart from the torso
 struct BodyPart {
     center: Vec3,
     half: Vec3,
     shade: f32,
 }
 
-/// A blocky humanoid roughly 1.8 blocks tall, built from six boxes.
+// head, torso, two arms, two legs. about 1.8 blocks tall
 const BODY: [BodyPart; 6] = [
     BodyPart {
         center: Vec3::new(0.0, 1.55, 0.0),
@@ -455,21 +437,18 @@ const BODY: [BodyPart; 6] = [
     },
 ];
 
-/// A remote player as the renderer needs it.
 pub struct Avatar {
     pub position: Vec3,
     pub yaw: f32,
     pub color: Vec3,
 }
 
-/// Geometry never reaches further than the loaded chunk window, so the far
-/// plane is derived from it rather than guessed.
+// geometry never goes past the loaded window
 fn far_plane() -> f32 {
     let horizontal = ((RENDER_DISTANCE + 1) * CHUNK_SIZE) as f32 * std::f32::consts::SQRT_2;
     (horizontal + WORLD_HEIGHT as f32).ceil()
 }
 
-/// Sun direction and palette for the current time of day.
 pub struct SkyState {
     pub sun_direction: Vec3,
     pub sun_color: Vec3,
@@ -477,15 +456,14 @@ pub struct SkyState {
 }
 
 impl SkyState {
-    /// `time_of_day` runs 0.0..1.0 over a full cycle, with 0.25 at noon.
+    /// `time_of_day` runs 0..1 over a cycle, 0.25 is noon.
     pub fn at(time_of_day: f32) -> Self {
         let angle = time_of_day * std::f32::consts::TAU;
         let sun_direction = Vec3::new(angle.cos() * 0.6, angle.sin(), angle.cos() * 0.35)
             .normalize_or_zero();
 
-        // Height of the sun above the horizon, 0 at night and 1 at noon.
+        // 0 at night, 1 at noon
         let elevation = sun_direction.y.max(0.0);
-        // Warm, low-contrast light near the horizon; neutral and bright at noon.
         let dawn = (1.0 - elevation).powf(2.0);
 
         let day_sky = Vec3::new(0.48, 0.72, 0.90);
@@ -496,7 +474,7 @@ impl SkyState {
             day_sky.lerp(dusk_sky, dawn) * (0.35 + 0.65 * elevation.powf(0.5))
                 + night_sky * (1.0 - elevation).powf(3.0)
         } else {
-            // Below the horizon: fade to night over the first few degrees.
+            // below the horizon, fade to night over the first few degrees
             let dusk = (1.0 + sun_direction.y * 6.0).clamp(0.0, 1.0);
             night_sky.lerp(dusk_sky * 0.45, dusk)
         };
@@ -512,9 +490,8 @@ impl SkyState {
     }
 }
 
-/// Six frustum planes extracted from the view-projection matrix
-/// (Gribb & Hartmann). Each plane is `(a, b, c, d)` with the normal pointing
-/// inwards.
+/// Gribb & Hartmann plane extraction. Each plane is (a, b, c, d) with the normal
+/// pointing inwards.
 struct Frustum {
     planes: [Vec4; 6],
 }
@@ -522,7 +499,7 @@ struct Frustum {
 impl Frustum {
     fn from_matrix(matrix: Mat4) -> Self {
         let m = matrix.to_cols_array_2d();
-        // Rows of the matrix, in column-major storage m[column][row].
+        // rows of the matrix, storage is column major m[col][row]
         let row = |index: usize| Vec4::new(m[0][index], m[1][index], m[2][index], m[3][index]);
         let (x, y, z, w) = (row(0), row(1), row(2), row(3));
 
@@ -539,8 +516,8 @@ impl Frustum {
 
     fn intersects_aabb(&self, min: Vec3, max: Vec3) -> bool {
         for plane in &self.planes {
-            // Test the box corner furthest along the plane normal; if even that
-            // one is behind the plane the whole box is outside.
+            // test the corner furthest along the normal, if that one is behind
+            // the plane the whole box is out
             let positive = Vec3::new(
                 if plane.x >= 0.0 { max.x } else { min.x },
                 if plane.y >= 0.0 { max.y } else { min.y },
@@ -554,8 +531,7 @@ impl Frustum {
     }
 }
 
-/// Every chunk draws quads in the same order, so one immutable index buffer
-/// serves them all.
+// every chunk draws its quads in the same order, so one buffer does for all
 fn build_shared_index_buffer(gl: &Gl) -> Result<WebGlBuffer, JsValue> {
     let buffer = gl
         .create_buffer()
@@ -577,8 +553,7 @@ fn build_shared_index_buffer(gl: &Gl) -> Result<WebGlBuffer, JsValue> {
     Ok(buffer)
 }
 
-/// The twelve edges of a unit cube centred on the origin, as line pairs. Shares
-/// the entity program, so it carries an unused normal to match that layout.
+// shares the entity program, hence the unused normal in the layout
 fn build_cube_outline(gl: &Gl, program: &WebGlProgram) -> Result<WebGlVertexArrayObject, JsValue> {
     const CORNERS: [[f32; 3]; 8] = [
         [-0.5, -0.5, -0.5],
@@ -609,7 +584,6 @@ fn build_cube_outline(gl: &Gl, program: &WebGlProgram) -> Result<WebGlVertexArra
     for (from, to) in EDGES {
         for corner in [CORNERS[from], CORNERS[to]] {
             data.extend_from_slice(&corner);
-            // Faces the sun so the outline keeps a steady tone.
             data.extend_from_slice(&[0.0, 1.0, 0.0]);
         }
     }
@@ -617,8 +591,6 @@ fn build_cube_outline(gl: &Gl, program: &WebGlProgram) -> Result<WebGlVertexArra
     upload_entity_geometry(gl, program, &data)
 }
 
-/// A unit cube centred on the origin, position and normal interleaved. Avatar
-/// parts are just this cube scaled and placed.
 fn build_unit_cube(gl: &Gl, program: &WebGlProgram) -> Result<WebGlVertexArrayObject, JsValue> {
     const FACES: [([f32; 3], [f32; 3], [f32; 3]); 6] = [
         ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
@@ -638,7 +610,7 @@ fn build_unit_cube(gl: &Gl, program: &WebGlProgram) -> Result<WebGlVertexArrayOb
                 (normal[2] + up[2] * u + right[2] * v) * 0.5,
             ]
         };
-        // Two triangles, wound counter-clockwise seen from outside.
+        // two triangles, CCW seen from outside
         for (u, v) in [
             (-1.0, -1.0),
             (-1.0, 1.0),
@@ -655,7 +627,6 @@ fn build_unit_cube(gl: &Gl, program: &WebGlProgram) -> Result<WebGlVertexArrayOb
     upload_entity_geometry(gl, program, &data)
 }
 
-/// Uploads interleaved position+normal data as a VAO for the entity program.
 fn upload_entity_geometry(
     gl: &Gl,
     program: &WebGlProgram,
@@ -812,7 +783,7 @@ uniform vec2 u_fog_range;
 out vec4 out_color;
 
 void main() {
-    // Per-face tint keeps cube edges readable even in flat light.
+    // per-face tint, keeps cube edges readable in flat light
     float face = 0.78;
     if (v_normal.y > 0.5) {
         face = 1.0;
@@ -822,17 +793,16 @@ void main() {
         face = 0.86;
     }
 
-    // Half-lambert: a hard max(dot, 0) drops every face turned away from the
-    // sun to pure black, which reads as a hole rather than a shaded side.
+    // half lambert, a hard max(dot, 0) drops faces turned away from the sun to
+    // pure black and they read as holes
     float lambert = dot(v_normal, u_sun_direction) * 0.5 + 0.5;
     float diffuse = lambert * lambert;
-    // Skylight decides how much of the sun and sky a surface can even see.
     float exposure = mix(0.25, 1.0, v_skylight);
-    // Ambient occlusion never reaches full black, so corners stay legible.
+    // never full black or corners stop being legible
     float occlusion = mix(0.6, 1.0, v_ao);
 
-    // Ambient is tinted by the sky but pulled back towards white: taking the
-    // sky colour neat washes every material towards blue-green.
+    // pulled back towards white, taking the sky color neat washes every
+    // material towards blue-green
     vec3 ambient = mix(vec3(1.0), u_sky_color, 0.6) * 0.55 * exposure;
     vec3 direct = u_sun_color * diffuse * 0.65 * exposure;
     vec3 shaded = v_color * face * occlusion * (ambient + direct + 0.05);
@@ -855,8 +825,8 @@ uniform mat4 u_model;
 out vec3 v_normal;
 
 void main() {
-    // Avatar parts are only translated, rotated about Y and scaled, so the
-    // model matrix upper block is safe to use directly on the normal.
+    // parts are only translated, rotated about Y and scaled, so the upper block
+    // of the model matrix is fine to use on the normal directly
     v_normal = normalize(mat3(u_model) * a_normal);
     gl_Position = u_view_projection * u_model * vec4(a_position, 1.0);
 }

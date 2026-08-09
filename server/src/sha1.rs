@@ -1,8 +1,6 @@
-//! SHA-1, needed only to answer the WebSocket opening handshake.
-//!
-//! RFC 6455 requires the server to echo a hash of the client's key. That is the
-//! whole reason this exists — SHA-1 is not used here for anything security
-//! related, and must not be reused as if it were.
+//! SHA-1, only here because RFC 6455 makes the server echo a hash of the
+//! client's key. Not used for anything security related, don't reuse it as if
+//! it were.
 
 pub fn digest(message: &[u8]) -> [u8; 20] {
     let mut state: [u32; 5] = [
@@ -13,7 +11,7 @@ pub fn digest(message: &[u8]) -> [u8; 20] {
         0xC3D2_E1F0,
     ];
 
-    // Pad to a multiple of 64 bytes: a 0x80 byte, zeroes, then the bit length.
+    // pad to a multiple of 64: 0x80, zeroes, then the bit length
     let mut padded = message.to_vec();
     let bit_length = (message.len() as u64) * 8;
     padded.push(0x80);
@@ -40,7 +38,7 @@ pub fn digest(message: &[u8]) -> [u8; 20] {
                 40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1B_BCDC),
                 _ => (b ^ c ^ d, 0xCA62_C1D6),
             };
-            let temporary = a
+            let tmp = a
                 .rotate_left(5)
                 .wrapping_add(mix)
                 .wrapping_add(e)
@@ -50,7 +48,7 @@ pub fn digest(message: &[u8]) -> [u8; 20] {
             d = c;
             c = b.rotate_left(30);
             b = a;
-            a = temporary;
+            a = tmp;
         }
 
         state[0] = state[0].wrapping_add(a);
@@ -93,7 +91,7 @@ mod tests {
         );
     }
 
-    /// Exercises the multi-block path and the length encoding.
+    // hits the multi-block path and the length encoding
     #[test]
     fn handles_input_longer_than_one_block() {
         assert_eq!(
@@ -102,7 +100,6 @@ mod tests {
         );
     }
 
-    /// The exact example from RFC 6455 section 1.3.
     #[test]
     fn reproduces_the_rfc6455_handshake_example() {
         let key = b"dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-C5AB0DC85B11";

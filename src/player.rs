@@ -4,11 +4,10 @@ use crate::{input::Input, world::World};
 
 const PLAYER_RADIUS: f32 = 0.3;
 const PLAYER_HEIGHT: f32 = 1.8;
-/// Raised above the usual 1.62 so the world reads bigger. Note this sits above
-/// PLAYER_HEIGHT on purpose: the collision box is deliberately left unchanged so
-/// movement is unaffected, and `eye_position` compensates.
+/// Higher than the usual 1.62 so the world feels bigger. Yes, this is above
+/// PLAYER_HEIGHT, on purpose: the collsion box stays as is so movement doesn't
+/// change, `eye_position` deals with the rest.
 const EYE_HEIGHT: f32 = 2.0;
-/// Lowest the camera may drop to when the eye height is blocked.
 const MIN_EYE_HEIGHT: f32 = 1.4;
 const GRAVITY: f32 = 24.0;
 const JUMP_SPEED: f32 = 8.5;
@@ -79,12 +78,9 @@ impl Player {
         }
     }
 
-    /// Eye height, lowered when the raised camera would end up inside a block.
-    ///
-    /// Because the eyes sit above the collision box, the body fits under a
-    /// two-block ceiling while the camera does not. Without this the screen
-    /// would simply fill with solid colour. Needs the world, so it is not a
-    /// plain accessor.
+    /// Ducks when the raised camera would end up inside a block. The eyes sit
+    /// above the collision box, so the body fits under a two-block ceiling and
+    /// the camera doesn't, and the screen just fills with solid color.
     pub fn eye_position(&self, world: &World) -> Vec3 {
         let mut height = EYE_HEIGHT;
         while height > MIN_EYE_HEIGHT {
@@ -123,7 +119,6 @@ impl Player {
         }
     }
 
-    /// Collision box corners, in world space.
     pub fn bounds(&self) -> (Vec3, Vec3) {
         (
             Vec3::new(
@@ -177,7 +172,7 @@ mod tests {
     #[test]
     fn eye_sits_at_full_height_when_nothing_is_above() {
         let mut world = World::generate(41);
-        // Clear a tall column so the raised camera has room.
+        // clear a tall column so the camera has room
         for y in 25..32 {
             world.set(IVec3::new(4, y, 4), Block::Air);
         }
@@ -188,17 +183,13 @@ mod tests {
         assert!((eye.y - (25.0 + EYE_HEIGHT)).abs() < 1e-5);
     }
 
-    /// The eyes sit above the collision box, so the body fits under a low
-    /// ceiling while the camera would not. It must duck rather than end up
-    /// inside the block.
     #[test]
     fn eye_ducks_under_a_low_ceiling() {
         let mut world = World::generate(42);
         for y in 25..32 {
             world.set(IVec3::new(4, y, 4), Block::Air);
         }
-        // Ceiling two blocks above the feet: the body (1.8) fits, the eyes
-        // (2.106) would not.
+        // ceiling two blocks up: body (1.8) fits, eyes (2.0) don't
         world.set(IVec3::new(4, 27, 4), Block::Stone);
 
         let mut player = Player::new(Vec3::new(4.5, 25.0, 4.5));

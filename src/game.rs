@@ -20,18 +20,15 @@ use crate::{
 };
 
 const DEFAULT_SEED: u32 = 1_337;
-/// Seconds for a full day/night cycle.
+/// seconds for a full day/night cycle
 const DAY_LENGTH: f32 = 240.0;
-/// How far the player can reach to break or place.
 const REACH: f32 = 6.0;
-/// Minimum delay between two block actions, matching Minecraft's cadence.
+/// same cadence as Minecraft
 const ACTION_COOLDOWN_MS: f64 = 250.0;
-/// Duration of the hand swing animation defined in styles.css.
+/// must match the swing animation in styles.css
 const SWING_MS: f64 = 260.0;
-/// Meshing is spread across frames so a new chunk window never stalls one.
 const MESH_BUDGET_MS: f64 = 4.0;
-/// Touching the DOM every frame is itself a cost; four updates a second is
-/// plenty for a readout.
+/// touching the DOM every frame costs more than the readout is worth
 const HUD_INTERVAL_MS: f64 = 250.0;
 
 type AnimationCallback = Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>>;
@@ -46,8 +43,8 @@ struct Hud {
     players: HtmlElement,
 }
 
-/// A remote player, kept between two network updates so it can be drawn moving
-/// smoothly rather than teleporting 20 times a second.
+/// Kept between two network updates so remote players move smoothly instead of
+/// teleporting 20 times a second.
 struct RemotePlayer {
     from: Pose,
     to: Pose,
@@ -84,19 +81,17 @@ impl RemotePlayer {
                 lerp(self.from.position[1], self.to.position[1]),
                 lerp(self.from.position[2], self.to.position[2]),
             ],
-            // Shortest way round, so crossing ±pi does not spin the avatar.
+            // short way round, crossing +-pi shouldn't spin the avatar
             yaw: self.from.yaw + wrap_angle(self.to.yaw - self.from.yaw) * self.blend,
             pitch: lerp(self.from.pitch, self.to.pitch),
         }
     }
 }
 
-/// Folds an angle into -pi..pi so interpolation takes the short way round.
 fn wrap_angle(angle: f32) -> f32 {
     (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }
 
-/// Stable per-player colour, so the same person keeps the same look.
 fn color_for(id: PlayerId) -> Vec3 {
     let hue = (id.wrapping_mul(2_654_435_761) >> 8) as f32 / 16_777_216.0;
     let shift = |offset: f32| ((hue + offset) * std::f32::consts::TAU).sin() * 0.5 + 0.5;
@@ -133,15 +128,14 @@ struct Game {
     hud: Hud,
     hand: HtmlElement,
     hand_swing_until: f64,
-    /// Last block broken, which is what a click places back.
+    // TODO: one slot only for now, should be a real hotbar
     held_block: Option<Block>,
     next_action_at: f64,
     network: Option<Network>,
     remote_players: HashMap<PlayerId, RemotePlayer>,
     loader: Option<HtmlElement>,
     loader_hidden: bool,
-    /// Cached: reaching it through `window()` on every meshed chunk would cost
-    /// more than the timing is worth.
+    /// cached, going through window() on every meshed chunk isn't free
     performance: Performance,
 }
 
@@ -156,9 +150,9 @@ impl Game {
         let now = performance.now();
         let time_of_day = 0.18;
 
-        // Put the sky on screen before generating anything. The canvas is the
-        // largest element on the page, so leaving it blank through chunk
-        // generation pushes the largest contentful paint out by about a second.
+        // Get the sky on screen before generating anything. The canvas is the
+        // biggest element on the page, leaving it blank through chunk
+        // generation pushed the largest contentful paint out by ~1s.
         let mut renderer = Renderer::new(canvas)?;
         renderer.present_sky(&SkyState::at(time_of_day));
 
@@ -187,17 +181,15 @@ impl Game {
             hand_swing_until: 0.0,
             held_block: None,
             next_action_at: 0.0,
-            // Attempted right away; if nothing answers we simply stay solo.
+            // if nothing answers we just stay solo
             network: Network::connect(),
             remote_players: HashMap::new(),
             loader,
             loader_hidden: false,
             performance,
         };
-        // The opening window is meshed across frames like any other, rather
-        // than in one blocking burst: building 49 chunks up front locked the
-        // main thread for seconds before the page could respond to anything.
-        // The loader stays up until the last one lands.
+        // The starting window is meshed across frames like any other. Building
+        // all 49 up front locked the main thread for seconds.
         game.process_pending_meshes();
         Ok(game)
     }
@@ -210,7 +202,7 @@ impl Game {
 
         self.process_network(now, delta);
 
-        // In multiplayer the world is not yours to reset.
+        // in multiplayer the world isn't yours to reset
         if self.input.take_regeneration_request() && !self.is_online() {
             self.regenerate();
         }
@@ -241,8 +233,6 @@ impl Game {
         self.renderer.render(eye, direction, &sky);
         self.renderer.render_avatars(&self.avatars(), &sky);
 
-        // One DDA walk per frame — a dozen cell tests, far below anything that
-        // shows up in the frame budget.
         if let Some((cell, _)) = self.world.raycast(eye, direction, REACH) {
             self.renderer.render_block_highlight(cell, &sky);
         }
@@ -270,8 +260,8 @@ impl Game {
                     players,
                 } => {
                     network.set_id(id);
-                    // The server owns the world: rebuild ours from its seed and
-                    // replay every edit made before we arrived.
+                    // the server owns the world, rebuild ours from its seed and
+                    // replay everything done before we arrived
                     self.seed = seed;
                     self.world = World::generate(seed);
                     self.player = spawn_player(&self.world);
@@ -341,8 +331,8 @@ impl Game {
             .collect()
     }
 
-    /// Breaking and placing share one cooldown, which is what gives Minecraft
-    /// its characteristic rhythm rather than letting clicks fire every frame.
+    /// Breaking and placing share one cooldown, that's what gives the game its
+    /// rhythm instead of firing every frame.
     fn handle_block_actions(&mut self, now: f64) {
         let wants_break = self.input.take_break_request();
         let wants_place = self.input.take_place_request();
@@ -380,7 +370,7 @@ impl Game {
     fn update_held_label(&self) {
         let label = match self.held_block {
             Some(block) => format!("HOLDING {}", block_name(block)),
-            None => "HOLDING —".to_owned(),
+            None => "HOLDING -".to_owned(),
         };
         self.hud.held.set_inner_text(&label);
     }
@@ -425,7 +415,6 @@ impl Game {
         self.last_mesh_ms = self.performance.now() - started;
     }
 
-    /// Hides the loader once the starting window has finished meshing.
     fn update_loader(&mut self) {
         if self.loader_hidden || !self.pending_meshes.is_empty() {
             return;
@@ -558,8 +547,7 @@ fn register_mouse(
     canvas.add_event_listener_with_callback("mousedown", mousedown.as_ref().unchecked_ref())?;
     mousedown.forget();
 
-    // Without this the right click opens the browser context menu instead of
-    // placing a block.
+    // otherwise right click opens the context menu instead of placing
     let context_menu = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
         event.prevent_default();
     });
@@ -619,8 +607,7 @@ fn start_animation_loop(window: &Window, game: Rc<RefCell<Game>>) -> Result<(), 
     Ok(())
 }
 
-/// Applies a remote edit. Unknown discriminants are ignored rather than
-/// trusted, since they come off the wire.
+/// Unknown discriminants get dropped, this comes off the network.
 fn apply_edit(world: &mut World, edit: Edit) {
     let block = match edit.block {
         0 => Block::Air,
@@ -636,6 +623,7 @@ fn apply_edit(world: &mut World, edit: Edit) {
     world.set(IVec3::from_array(edit.position), block);
 }
 
+// TODO: always spawns on 0,0. Finding a flat-ish spot would be nicer.
 fn spawn_player(world: &World) -> Player {
     let x = 0;
     let z = 0;

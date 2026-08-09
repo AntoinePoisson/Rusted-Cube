@@ -1,15 +1,15 @@
-//! The slice of RFC 6455 this server needs: the opening handshake and text
-//! frames. No extensions, no fragmentation, no binary payloads.
+//! The bit of RFC 6455 this needs: opening handshake and text frames. No
+//! extensions, no fragmentation, no binary payloads.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
 use crate::sha1;
 
-/// Fixed GUID the handshake concatenates with the client key (RFC 6455 §1.3).
+/// RFC 6455 1.3, concatenated with the client key
 const HANDSHAKE_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-/// Refuse oversized frames rather than allocating whatever a client claims.
+/// don't allocate whatever a client claims
 const MAX_FRAME: u64 = 1 << 20;
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -38,7 +38,6 @@ pub fn base64(input: &[u8]) -> String {
     out
 }
 
-/// The value a client's `Sec-WebSocket-Key` must be answered with.
 pub fn accept_key(client_key: &str) -> String {
     base64(&sha1::digest(format!("{client_key}{HANDSHAKE_GUID}").as_bytes()))
 }
@@ -47,11 +46,11 @@ pub enum Frame {
     Text(String),
     Close,
     Ping(Vec<u8>),
-    /// Something we do not handle; the caller just carries on.
+    /// anything we don't handle, caller just carries on
     Other,
 }
 
-/// Reads one frame. Returns `None` when the peer is gone or misbehaving.
+/// `None` when the peer is gone or misbehaving.
 pub fn read_frame(stream: &mut TcpStream) -> Option<Frame> {
     let mut header = [0_u8; 2];
     stream.read_exact(&mut header).ok()?;
@@ -74,7 +73,7 @@ pub fn read_frame(stream: &mut TcpStream) -> Option<Frame> {
         return None;
     }
 
-    // Clients must mask; an unmasked client frame is a protocol error.
+    // clients must mask, an unmasked client frame is a protocol error
     let mut mask = [0_u8; 4];
     if masked {
         stream.read_exact(&mut mask).ok()?;
@@ -100,7 +99,7 @@ pub fn read_frame(stream: &mut TcpStream) -> Option<Frame> {
 
 fn write_frame(stream: &mut TcpStream, opcode: u8, payload: &[u8]) -> std::io::Result<()> {
     let mut frame = vec![0x80 | opcode];
-    // Server frames are never masked.
+    // server frames are never masked
     match payload.len() {
         length if length < 126 => frame.push(length as u8),
         length if length <= u16::MAX as usize => {
@@ -144,7 +143,6 @@ mod tests {
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
     }
 
-    /// The handshake example given in RFC 6455 section 1.3.
     #[test]
     fn accept_key_matches_the_rfc_example() {
         assert_eq!(

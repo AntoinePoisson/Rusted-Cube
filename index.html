@@ -1,7 +1,5 @@
 <!doctype html>
-<!-- data-multiplayer is flipped to "1" by the bundled server as it serves this
-     file. A static host leaves it at "0", and the game never opens a socket it
-     knows cannot connect. -->
+<!-- the LAN server flips data-multiplayer to "1" as it serves this file -->
 <html lang="en" data-multiplayer="0">
   <head>
     <meta charset="utf-8" />
@@ -11,12 +9,10 @@
       content="Rusted Cube is a small voxel sandbox powered by Rust, WebAssembly and WebGL2."
     />
     <meta name="theme-color" content="#92b4be" />
-    <title>Rusted Cube — Rust voxel sandbox</title>
+    <title>Rusted Cube - Rust voxel sandbox</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
-    <!-- Without these the browser only discovers the glue module after parsing
-         bootstrap.js, and the binary only after parsing the glue: three
-         sequential round trips before anything can be drawn. -->
+    <!-- without these it's 3 sequential round trips before anything is drawn -->
     <link rel="modulepreload" href="./pkg/rusted_cube.js" />
     <link
       rel="preload"
@@ -58,10 +54,10 @@
         <span class="hud__world">
           <span id="seed">SEED 1337</span>
           <span id="chunks">CHUNKS 0/49</span>
-          <span id="fps">— FPS</span>
+          <span id="fps">- FPS</span>
           <span id="mesh">MESH 0.00 MS</span>
           <span id="vertices">TRIS 0K</span>
-          <span id="held">HOLDING —</span>
+          <span id="held">HOLDING -</span>
           <span id="players">SOLO</span>
         </span>
         <span>ESC TO RELEASE</span>

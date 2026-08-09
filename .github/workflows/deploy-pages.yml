@@ -3,7 +3,6 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main, prod]
-  # Lets you redeploy the current branch tip without pushing.
   workflow_dispatch:
 
 permissions:
@@ -11,15 +10,13 @@ permissions:
   pages: write
   id-token: write
 
-# Never let two deployments race; queue them instead of cancelling, so a green
-# build is not thrown away by a later push.
+# queue deployments instead of cancelling, don't throw away a green build
 concurrency:
   group: github-pages
   cancel-in-progress: false
 
 env:
-  # Pinned rather than `stable`: this project's wasm-bindgen is 0.2.87, and
-  # Rust 1.82 changed the WebAssembly ABI in a way that breaks that generation.
+  # not `stable`: 1.82 changed the wasm ABI and broke wasm-bindgen 0.2.87
   RUST_VERSION: 1.76.0
   WASM_PACK_VERSION: 0.12.1
 
@@ -52,9 +49,6 @@ jobs:
             | sudo tar -xz --strip-components=1 -C /usr/local/bin --wildcards '*/wasm-pack'
           wasm-pack --version
 
-      # Deploy only what passes. --locked fails loudly if Cargo.lock is stale
-      # rather than silently resolving different dependency versions than the
-      # ones this project is pinned to.
       - name: Test the game
         run: cargo test --release --locked
 
@@ -71,21 +65,18 @@ jobs:
           cp bootstrap.js favicon.svg llms.txt _site/
           cp -r pkg _site/pkg
 
-          # Inline the stylesheet. Fetching it separately is a render-blocking
-          # round trip that costs roughly 300 ms of first paint; styles.css
-          # stays the single source of truth and is inlined only here.
+          # inline the css, a separate request is a render-blocking round trip
           python3 - <<'PY'
           from pathlib import Path
           html = Path("index.html").read_text()
           css = Path("styles.css").read_text()
           marker = '<link rel="stylesheet" href="./styles.css" />'
           if marker not in html:
-              raise SystemExit("stylesheet link not found — update this step")
+              raise SystemExit("stylesheet link not found, update this step")
           Path("_site/index.html").write_text(html.replace(marker, f"<style>{css}</style>"))
           PY
 
-          # Without this, Pages runs the output through Jekyll and drops paths
-          # it considers private.
+          # or Pages runs it through Jekyll and drops paths it thinks are private
           touch _site/.nojekyll
           ls -R _site | head -30
 

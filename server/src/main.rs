@@ -1,21 +1,15 @@
-//! Rusted Cube LAN server.
+//! Rusted Cube LAN server. Static files and the websocket out of one process,
+//! std only, one thread per conection. A few players on a local network doesn't
+//! justify an async runtime, and tokio needs a newer compiler than the game
+//! builds on anyway.
 //!
-//! Serves the static files and the WebSocket from one process, so everyone on
-//! the network only needs `http://<host>:8080`.
-//!
-//! Written against `std` alone: one thread per connection, no async runtime.
-//! A handful of players on a local network never justifies the dependency
-//! tree — and the game itself builds on a compiler those crates no longer
-//! support.
-//!
-//! The server owns the world seed and the list of block edits. Clients generate
-//! terrain locally from that seed, so only player poses and edits travel.
+//! Owns the seed and the edit list. Clients generate terrain locally from the
+//! seed, so only poses and edits travel.
 
-// The wire format is shared with the client by including the same source file
-// rather than depending on the game crate: that would drag wasm-bindgen and
-// web-sys into a build that has no use for them.
+// Same source file as the client instead of depending on the game crate, which
+// would pull wasm-bindgen and web-sys into a build with no use for them.
 #[path = "../../src/protocol.rs"]
-// The client uses parts of the protocol the server does not, and vice versa.
+// each side uses parts of the protocol the other doesn't
 #[allow(dead_code)]
 mod protocol;
 mod sha1;
@@ -31,7 +25,6 @@ use protocol::{ClientMessage, Edit, PlayerId, Pose, ServerMessage, DEFAULT_PORT}
 
 use websocket::Frame;
 
-/// Refuse absurd request headers rather than buffering them.
 const MAX_HEADER_BYTES: usize = 8 * 1024;
 
 struct Client {
@@ -41,14 +34,14 @@ struct Client {
 
 struct World {
     seed: u32,
-    /// Keyed by position so repeated edits of one cell collapse.
+    /// keyed by position so repeated edits of one cell collapse
     edits: HashMap<[i32; 3], u8>,
     clients: HashMap<PlayerId, Client>,
     next_id: PlayerId,
 }
 
 impl World {
-    /// Sends to every client except `origin`, dropping those that error out.
+    /// Everyone except `origin`. Clients that error out get dropped.
     fn broadcast(&mut self, origin: PlayerId, message: &ServerMessage) {
         let text = message.encode();
         let mut dead = Vec::new();
@@ -179,7 +172,7 @@ fn handshake(stream: &mut TcpStream, key: &str) -> std::io::Result<()> {
 }
 
 fn serve_websocket(stream: TcpStream, world: Arc<Mutex<World>>) {
-    // Register the newcomer and hand it the world under a single lock.
+    // register the newcomer and hand it the world under one lock
     let id = {
         let mut state = world.lock().unwrap();
         let id = state.next_id;
@@ -222,8 +215,7 @@ fn serve_websocket(stream: TcpStream, world: Arc<Mutex<World>>) {
                 pose,
             },
         );
-        // Existing players would otherwise not learn about this one until it
-        // first moved.
+        // otherwise nobody sees this one until it first moves
         state.broadcast(id, &ServerMessage::PlayerJoined { id, pose });
         println!("Player {id} joined ({} online)", state.clients.len());
         id
@@ -280,7 +272,7 @@ fn serve_file(stream: &mut TcpStream, path: &str) {
         requested
     };
 
-    // Only ever serve from the working directory.
+    // never serve outside the working directory
     if requested.split('/').any(|part| part == ".." || part.is_empty())
         || Path::new(requested).is_absolute()
     {
@@ -295,9 +287,9 @@ fn serve_file(stream: &mut TcpStream, path: &str) {
                 let _ = respond(stream, "500 Internal Server Error", "text/plain", b"Error");
                 return;
             }
-            // Announce multiplayer in the page itself. Letting the client probe
-            // for it instead would cost a request whose failure the browser
-            // logs as a console error on every static host.
+            // Tell the page multiplayer is available. Letting the client probe
+            // instead costs a request whose failure the browser logs as an
+            // error on every static host.
             if requested.ends_with(".html") {
                 if let Ok(text) = std::str::from_utf8(&bytes) {
                     let patched = text.replace(r#"data-multiplayer="0""#, r#"data-multiplayer="1""#);
@@ -318,7 +310,7 @@ fn content_type(path: &str) -> &'static str {
         Some("html") => "text/html; charset=utf-8",
         Some("js") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
-        // Browsers refuse to stream-compile a module served as anything else.
+        // browsers won't stream-compile a module served as anything else
         Some("wasm") => "application/wasm",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
@@ -347,7 +339,7 @@ fn respond(
     stream.flush()
 }
 
-/// Best-effort LAN address, printed so players know where to point a browser.
+// TODO: macOS only, en0 is hardcoded. Should walk the interfaces properly.
 fn local_addresses() -> Vec<String> {
     let Ok(output) = std::process::Command::new("ipconfig")
         .arg("getifaddr")

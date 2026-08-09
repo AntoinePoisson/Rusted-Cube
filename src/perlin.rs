@@ -68,9 +68,8 @@ impl PerlinNoise {
         value / total_amplitude
     }
 
-    /// Ridged noise: folding the signal around zero turns rounded domes into
-    /// sharp crests, which is what makes mountains read as mountains.
-    /// Returns a value in `0.0..=1.0`.
+    /// Folding the signal around zero turns rounded domes into sharp crests,
+    /// which is what makes mountains look like mountains. Returns 0..=1.
     pub fn ridge_sample(&self, x: f32, y: f32, octaves: u32) -> f32 {
         let mut value = 0.0;
         let mut amplitude = 1.0;

@@ -66,8 +66,7 @@ body {
 
 h1 {
   margin: 0;
-  /* System calligraphic stack: no network font, no offline breakage.
-     Falls back to the generic cursive face on platforms without these. */
+  /* system fonts only, no webfont to download */
   font-family: "Snell Roundhand", "Apple Chancery", "Segoe Script",
     "Brush Script MT", "Lucida Handwriting", cursive;
   font-size: clamp(4rem, 9.5vw, 7.6rem);
@@ -79,7 +78,7 @@ h1 {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* drop-shadow works on the clipped glyphs; text-shadow would not. */
+  /* text-shadow doesn't work on clipped glyphs, drop-shadow does */
   filter: drop-shadow(0 6px 18px rgba(8, 14, 10, 0.55));
 }
 
@@ -87,7 +86,6 @@ h1 .title__line {
   display: block;
 }
 
-/* Offset second line — the classic calligraphic stagger. */
 h1 .title__line + .title__line {
   margin-left: 1.4em;
 }
@@ -204,8 +202,7 @@ h1 .title__line + .title__line {
   transition: opacity 160ms ease;
 }
 
-/* Minecraft draws the first-person arm as a single cuboid, so this is one
-   plain rectangle: hard colour stops, square corners, no bevels. */
+/* one plain rectangle, hard color stops, no bevels, like the real thing */
 .hand__arm {
   position: absolute;
   right: 10%;
@@ -213,11 +210,11 @@ h1 .title__line + .title__line {
   width: 62%;
   height: 100%;
   background:
-    /* right-hand side face, kept darker like an unlit cube face */
+    /* darker right side face */
     linear-gradient(90deg, transparent 0 78%, rgba(0, 0, 0, 0.22) 78% 100%),
-    /* left highlight column */
+    /* left highlight */
     linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 13%, transparent 13%),
-    /* bare forearm on top, cyan sleeve below */
+    /* forearm on top, sleeve below */
     linear-gradient(#f2c294 0 40%, #e3ab7d 40% 46%, #2f9b9b 46% 52%, #268a8a 52%
         100%);
 }
@@ -248,9 +245,8 @@ h1 .title__line + .title__line {
   animation: hand-swing 260ms cubic-bezier(0.35, 0, 0.35, 1);
 }
 
-/* A badge rather than a full-screen curtain: covering the page delayed the
-   largest contentful paint until the whole starting window had meshed, for no
-   benefit — the title and the sky are worth showing straight away. */
+/* a badge, not a full screen curtain: covering the page delayed the LCP until
+   everything had meshed, for nothing */
 .loader {
   position: fixed;
   bottom: 3.5rem;
@@ -332,13 +328,12 @@ noscript {
     max-width: 17rem;
   }
 
-  /* The calligraphic stagger pushes the second line off a narrow screen. */
+  /* the stagger pushes the second line off screen here */
   h1 .title__line + .title__line {
     margin-left: 0.6em;
   }
 
-  /* The full readout wraps into an unreadable pile on a phone; keep the two
-     figures that mean something and drop the profiling ones. */
+  /* the full readout wraps into a pile on a phone, drop the profiling ones */
   .hud__world {
     gap: 0.75rem;
   }
@@ -349,8 +344,7 @@ noscript {
     display: none;
   }
 
-  /* Anything under 12px is genuinely hard to read on a phone, and the tracking
-     these use makes it worse. The desktop layout keeps its finer scale. */
+  /* under 12px is unreadable on a phone, the letter-spacing makes it worse */
   .eyebrow,
   .controls,
   .intro__hint,

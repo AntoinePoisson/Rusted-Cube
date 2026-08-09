@@ -1,8 +1,6 @@
-//! WebSocket client for LAN play.
-//!
-//! Connecting is optional by design: when the page is served by anything other
-//! than the bundled server the socket simply fails to open and the game carries
-//! on single-player. Multiplayer is a bonus, never a prerequisite.
+//! WebSocket client for LAN play. Connecting is optional: served by anything
+//! other than the bundled server, the socket never opens and the game runs
+//! single player.
 
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
@@ -27,15 +25,14 @@ pub struct Network {
 }
 
 impl Network {
-    /// Starts connecting to the server that served this page. Returns `None`
-    /// only when the URL cannot be built at all; a refused connection is
-    /// reported later through `is_connected`.
+    /// `None` only when the URL can't be built at all, a refused connection
+    /// shows up later through `is_connected`.
     pub fn connect() -> Option<Self> {
         let window = web_sys::window()?;
 
-        // bootstrap.js probes the host first. Opening a socket that cannot
-        // succeed would make the browser log a failed handshake on every static
-        // host, so absence of the flag means single-player, quietly.
+        // The server sets this attribute on the page it serves. Opening a socket
+        // that can't succeed makes the browser log a failed handshake on every
+        // static host, so no flag means solo, quietly.
         let serves_multiplayer = window
             .document()
             .and_then(|document| document.document_element())
@@ -75,8 +72,6 @@ impl Network {
         socket.set_onopen(Some(on_open.as_ref().unchecked_ref()));
         on_open.forget();
 
-        // No server on this address: stay single-player, and do not shout about
-        // it in the console.
         let close_status = Rc::clone(&status);
         let on_close = Closure::<dyn FnMut(Event)>::new(move |_| {
             *close_status.borrow_mut() = Status::Closed;
@@ -104,8 +99,7 @@ impl Network {
         *self.status.borrow() == Status::Open
     }
 
-    /// The server never echoes a client's own messages back, so the id is kept
-    /// only for display purposes.
+    /// Display only, the server never echoes a client's own messages back.
     pub fn set_id(&mut self, id: PlayerId) {
         self.id = Some(id);
     }
@@ -114,13 +108,12 @@ impl Network {
         self.id
     }
 
-    /// Takes every message received since the last call.
     pub fn drain(&self) -> Vec<ServerMessage> {
         self.inbox.borrow_mut().drain(..).collect()
     }
 
-    /// Reports the local pose, rate-limited: sending every frame would be far
-    /// more traffic than the remote side can use.
+    /// Rate limited, sending every frame is more traffic than the other side
+    /// can use anyway.
     pub fn send_pose(&mut self, pose: Pose, now: f64) {
         if !self.is_connected() || now - self.last_move_sent < MOVE_INTERVAL_MS {
             return;
