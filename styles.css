@@ -66,28 +66,30 @@ body {
 
 h1 {
   margin: 0;
-  /* system fonts only, no webfont to download */
-  font-family: "Snell Roundhand", "Apple Chancery", "Segoe Script",
-    "Brush Script MT", "Lucida Handwriting", cursive;
-  font-size: clamp(4rem, 9.5vw, 7.6rem);
-  font-weight: 500;
-  line-height: 0.95;
-  letter-spacing: 0.005em;
-  text-transform: none;
-  background: linear-gradient(168deg, #f6f4e4 8%, #d7e19a 46%, #8fa860 92%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  /* text-shadow doesn't work on clipped glyphs, drop-shadow does */
-  filter: drop-shadow(0 6px 18px rgba(8, 14, 10, 0.55));
+  /* Plain system grotesque, no webfont to download. Flat terminals and closed
+     apertures give the blocky look the world itself has. */
+  font-family: "Helvetica Neue", Helvetica, Arial, "Segoe UI", system-ui,
+    sans-serif;
+  font-size: clamp(3.6rem, 11vw, 9rem);
+  /* 800 rather than 900: font-synthesis is off, so this picks the heaviest
+     real weight installed instead of asking for a faked one */
+  font-weight: 800;
+  line-height: 0.88;
+  /* tightened, the default gaps read as loose at this size */
+  letter-spacing: -0.03em;
+  color: #ffffff;
+  /* it sits over the live world, so it carries its own contrast */
+  text-shadow: 0 6px 24px rgba(8, 14, 10, 0.7);
 }
 
 h1 .title__line {
   display: block;
 }
 
+/* a stagger, kept small: upright letters need far less offset than the script
+   this replaced before the step reads */
 h1 .title__line + .title__line {
-  margin-left: 1.4em;
+  margin-left: 0.7em;
 }
 
 .intro__copy {
@@ -339,7 +341,7 @@ noscript {
 
   /* the stagger pushes the second line off screen here */
   h1 .title__line + .title__line {
-    margin-left: 0.6em;
+    margin-left: 0.4em;
   }
 
   /* the full readout wraps into a pile on a phone, drop the profiling ones */
