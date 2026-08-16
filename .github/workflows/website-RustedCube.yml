@@ -24,16 +24,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust ${{ env.RUST_VERSION }}
         run: |
-          rustup toolchain install "$RUST_VERSION" --profile minimal
+          # clippy is not in the minimal profile, and the lint step needs it
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
           rustup default "$RUST_VERSION"
           rustup target add wasm32-unknown-unknown
 
       - name: Cache cargo registry and build output
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -56,10 +57,11 @@ jobs:
         run: cargo test --release --locked
         working-directory: server
 
-      # both crates are clean, keep them that way
+      # Both crates are clean under the pinned toolchain, keep them that way.
+      # Check against RUST_VERSION locally before touching this, clippy gains
+      # lints between releases and a newer one is not what CI runs.
       - name: Lint
         run: |
-          rustup component add clippy
           cargo clippy --release --all-targets --locked -- -D warnings
           cargo clippy --release --all-targets --locked --manifest-path server/Cargo.toml -- -D warnings
 
@@ -87,9 +89,11 @@ jobs:
           touch _site/.nojekyll
           ls -R _site | head -30
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
+          # dotfiles are dropped by default since v4, and .nojekyll is one
+          include-hidden-files: true
 
   deploy:
     needs: build
@@ -101,4 +105,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

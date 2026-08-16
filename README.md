@@ -59,6 +59,10 @@ cd server && cargo run --release      # optional seed: -- 42
 It prints the address to share. No dependencies, everything on std, one thread
 per connection. Port 8118 because 8080 is always taken already.
 
+Address discovery shells out to `ipconfig getifaddr en0`, so it only prints a
+shareable address on macOS. Elsewhere the server still runs, you just have to
+find your LAN IP yourself.
+
 The server owns the seed and the edit list, clients generate the terrain locally
 from that seed, so only poses and edits travel. Behind a static host no socket
 gets opened at all and the game stays single player. `R` is disabled online

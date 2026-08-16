@@ -68,9 +68,16 @@ pub fn digest(message: &[u8]) -> [u8; 20] {
 #[cfg(test)]
 mod tests {
     use super::digest;
+    use std::fmt::Write;
 
+    // appended in place rather than collected from a String per byte, which is
+    // what clippy::format_collect is about
     fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+        let mut out = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            write!(out, "{byte:02x}").expect("writing to a String cannot fail");
+        }
+        out
     }
 
     #[test]
