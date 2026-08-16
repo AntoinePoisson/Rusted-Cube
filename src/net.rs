@@ -99,6 +99,11 @@ impl Network {
         *self.status.borrow() == Status::Open
     }
 
+    /// Distinct from `!is_connected()`, which is also true while still dialling.
+    pub fn is_closed(&self) -> bool {
+        *self.status.borrow() == Status::Closed
+    }
+
     /// Display only, the server never echoes a client's own messages back.
     pub fn set_id(&mut self, id: PlayerId) {
         self.id = Some(id);

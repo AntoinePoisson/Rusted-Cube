@@ -16,6 +16,11 @@ const TREE_MARGIN: i32 = 3;
 
 const GENERATION_BUDGET: usize = 8;
 
+/// Worst case for a single chunk: a 3D checkerboard, half the cells solid and
+/// all six faces of every one of them exposed. Nothing beats it, a denser fill
+/// only buries faces. The renderer sizes its shared index buffer from this.
+pub const MAX_QUADS_PER_CHUNK: usize = (CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE) as usize / 2 * 6;
+
 /// One block of padding is enough to mesh a chunk: faces need the direct
 /// neighbor, AO needs the diagonals.
 const PAD: i32 = 1;
@@ -35,6 +40,24 @@ pub enum Block {
 }
 
 impl Block {
+    /// Every variant in discriminant order, so `from_u8` and the `repr(u8)`
+    /// values can't drift apart. A test pins the two together.
+    const ALL: [Block; 8] = [
+        Block::Air,
+        Block::Grass,
+        Block::Dirt,
+        Block::Stone,
+        Block::Sand,
+        Block::Wood,
+        Block::Leaves,
+        Block::Snow,
+    ];
+
+    /// Unknown discriminants are rejected, this comes off the network.
+    pub fn from_u8(value: u8) -> Option<Self> {
+        Self::ALL.get(value as usize).copied()
+    }
+
     fn is_solid(self) -> bool {
         self != Block::Air
     }
@@ -273,7 +296,7 @@ impl Halo {
     }
 
     fn block(&self, x: i32, y: i32, z: i32) -> Block {
-        if y < 0 || y >= WORLD_HEIGHT {
+        if !(0..WORLD_HEIGHT).contains(&y) {
             return Block::Air;
         }
         self.blocks[Self::index(x, y, z)]
@@ -382,6 +405,11 @@ impl World {
         self.chunks.len()
     }
 
+    pub fn is_loaded(&self, pos: ChunkPosition) -> bool {
+        self.chunks.contains_key(&pos)
+    }
+
+    #[cfg(test)]
     pub fn loaded_positions(&self) -> HashSet<ChunkPosition> {
         self.chunks.keys().copied().collect()
     }
@@ -422,17 +450,23 @@ impl World {
         }
 
         let chunk_pos = ChunkPosition::from_world(position.x, position.z);
+
+        // Recorded before touching the chunk, and even when there is no chunk to
+        // touch. Edits arriving over the network land anywhere on the map, most
+        // of it outside the loaded window: dropping those lost every build a
+        // joining client was told about, and they never came back because the
+        // chunk regenerated from bare terrain.
+        self.edits
+            .entry(chunk_pos)
+            .or_default()
+            .insert(position, block);
+
         let Some(chunk) = self.chunks.get_mut(&chunk_pos) else {
             return false;
         };
         if !chunk.set(local_position(position), block) {
             return false;
         }
-
-        self.edits
-            .entry(chunk_pos)
-            .or_default()
-            .insert(position, block);
 
         // a block on a border changes the neighbor's visible faces and AO too
         let local = local_position(position);
@@ -619,14 +653,8 @@ impl World {
                         }
                     }
                 }
-                // above max_height it's all open sky
-                for y in chunk.max_height..WORLD_HEIGHT {
-                    for hz in z_start..=z_end {
-                        for hx in x_start..=x_end {
-                            halo.skylight[Halo::index(hx, y, hz)] = MAX_SKYLIGHT;
-                        }
-                    }
-                }
+                // above max_height it's all open sky, which is what the buffer
+                // was filled with, so there is nothing left to write
             }
         }
 
@@ -957,11 +985,7 @@ fn corner_lighting(halo: &Halo, block: IVec3, face: &Face, corner: [i32; 3]) -> 
             samples += 1;
         }
     }
-    let light = if samples == 0 {
-        0
-    } else {
-        (total * 4) / samples / 4
-    };
+    let light = if samples == 0 { 0 } else { total / samples };
 
     (occlusion, light.min(MAX_SKYLIGHT as u32))
 }
@@ -1187,6 +1211,66 @@ mod tests {
             world.highest_block(0, 0).is_some(),
             "the spawn chunk must be generated before distant ones"
         );
+    }
+
+    #[test]
+    fn edits_land_on_chunks_that_are_not_loaded_yet() {
+        let mut world = World::generate(8);
+        // far outside the freshly generated window, where a remote player's
+        // edits arrive from
+        let far = IVec3::new(CHUNK_SIZE * 3 + 4, 45, CHUNK_SIZE * 3 + 4);
+        assert_eq!(world.get(far), Block::Air, "the test spot must start empty");
+        world.set(far, Block::Stone);
+
+        settle(&mut world, Vec3::new(far.x as f32, 0.0, far.z as f32));
+        assert_eq!(
+            world.get(far),
+            Block::Stone,
+            "an edit made before the chunk existed must be replayed when it loads"
+        );
+    }
+
+    #[test]
+    fn block_discriminants_match_their_wire_values() {
+        for (value, block) in Block::ALL.iter().enumerate() {
+            assert_eq!(*block as usize, value);
+            assert_eq!(Block::from_u8(value as u8), Some(*block));
+        }
+        assert_eq!(Block::from_u8(Block::ALL.len() as u8), None);
+        assert_eq!(Block::from_u8(u8::MAX), None);
+    }
+
+    /// Pins `MAX_QUADS_PER_CHUNK` to the densest mesh a chunk can produce, so the
+    /// renderer's index buffer can be sized from it without silently clipping.
+    #[test]
+    fn a_checkerboard_chunk_hits_the_quad_budget_exactly() {
+        let mut world = World::generate(77);
+        let position = ChunkPosition { x: 0, z: 0 };
+        // drop the neighbors so no border face is hidden, that is the worst case
+        world.chunks.retain(|pos, _| *pos == position);
+
+        let chunk = world.chunks.get_mut(&position).expect("origin chunk");
+        for y in 0..WORLD_HEIGHT {
+            for z in 0..CHUNK_SIZE {
+                for x in 0..CHUNK_SIZE {
+                    // every solid cell is surrounded by air, so all six of its
+                    // faces are emitted
+                    let solid = (x + y + z) % 2 == 0;
+                    let block = if solid { Block::Stone } else { Block::Air };
+                    chunk.set_raw(IVec3::new(x, y, z), block);
+                }
+            }
+        }
+        chunk.refresh_max_height();
+        chunk.recompute_skylight();
+
+        let plain = world.build_chunk_mesh(position);
+        assert_eq!(
+            plain.quad_count,
+            super::MAX_QUADS_PER_CHUNK,
+            "the budget must be exactly the worst case, no more and no less"
+        );
+        assert!(world.build_chunk_mesh_greedy(position).quad_count <= super::MAX_QUADS_PER_CHUNK);
     }
 
     #[test]
@@ -1470,7 +1554,11 @@ mod tests {
 
     #[test]
     fn greedy_meshing_covers_exactly_the_same_surface() {
-        let world = World::generate(1_337);
+        let mut world = World::generate(1_337);
+        // the whole window, not just the handful of chunks one call generates:
+        // only settled chunks get a complete halo, and the halo is what the two
+        // meshers have to agree on
+        settle(&mut world, Vec3::ZERO);
         for position in world.loaded_positions() {
             let plain = world.build_chunk_mesh(position);
             let greedy = world.build_chunk_mesh_greedy(position);
@@ -1492,7 +1580,10 @@ mod tests {
     #[test]
     #[ignore]
     fn mesh_benchmark() {
-        let world = World::generate(1_337);
+        // without this it times the 8 chunks one call generates, with halos full
+        // of holes, and reports numbers the running game never sees
+        let mut world = World::generate(1_337);
+        settle(&mut world, Vec3::ZERO);
         let positions: Vec<_> = world.loaded_positions().into_iter().collect();
 
         let start = std::time::Instant::now();

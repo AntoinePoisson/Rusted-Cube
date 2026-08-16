@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
     rc::Rc,
 };
 
@@ -215,8 +215,8 @@ impl Game {
         self.queue_dirty_meshes();
         self.process_pending_meshes();
         self.update_loader();
-        self.renderer
-            .retain_chunks(&self.world.loaded_positions());
+        let world = &self.world;
+        self.renderer.retain_chunks(|position| world.is_loaded(position));
 
         let hand_class = if now < self.hand_swing_until {
             "hand hand--swing"
@@ -251,6 +251,14 @@ impl Game {
             return;
         };
 
+        // The server can't send PlayerLeft for a socket that already died, so
+        // without this everyone who was online stays frozen in the world while
+        // the HUD claims we are solo.
+        if network.is_closed() {
+            self.remote_players.clear();
+            return;
+        }
+
         for message in network.drain() {
             match message {
                 ServerMessage::Welcome {
@@ -269,7 +277,7 @@ impl Game {
                         apply_edit(&mut self.world, edit);
                     }
                     self.pending_meshes.clear();
-                    self.renderer.retain_chunks(&HashSet::new());
+                    self.renderer.clear_chunks();
                     self.remote_players = players
                         .into_iter()
                         .map(|(id, pose)| (id, RemotePlayer::new(pose, id)))
@@ -383,7 +391,7 @@ impl Game {
         self.world = World::generate(self.seed);
         self.player = spawn_player(&self.world);
         self.pending_meshes.clear();
-        self.renderer.retain_chunks(&HashSet::new());
+        self.renderer.clear_chunks();
         self.queue_dirty_meshes();
         self.hud.seed.set_inner_text(&format!("SEED {}", self.seed));
     }
@@ -609,16 +617,8 @@ fn start_animation_loop(window: &Window, game: Rc<RefCell<Game>>) -> Result<(), 
 
 /// Unknown discriminants get dropped, this comes off the network.
 fn apply_edit(world: &mut World, edit: Edit) {
-    let block = match edit.block {
-        0 => Block::Air,
-        1 => Block::Grass,
-        2 => Block::Dirt,
-        3 => Block::Stone,
-        4 => Block::Sand,
-        5 => Block::Wood,
-        6 => Block::Leaves,
-        7 => Block::Snow,
-        _ => return,
+    let Some(block) = Block::from_u8(edit.block) else {
+        return;
     };
     world.set(IVec3::from_array(edit.position), block);
 }

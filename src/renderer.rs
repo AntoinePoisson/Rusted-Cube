@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use glam::{IVec3, Mat4, Vec3, Vec4};
 use wasm_bindgen::{JsCast, JsValue};
@@ -7,12 +7,12 @@ use web_sys::{
     WebGlUniformLocation, WebGlVertexArrayObject,
 };
 
-use crate::world::{ChunkPosition, CHUNK_SIZE, RENDER_DISTANCE, WORLD_HEIGHT};
+use crate::world::{
+    ChunkPosition, CHUNK_SIZE, MAX_QUADS_PER_CHUNK, RENDER_DISTANCE, WORLD_HEIGHT,
+};
 
 /// two u32 per vertex, down from the 36 bytes a float layout would need
 const VERTEX_SIZE: i32 = 8;
-
-const MAX_QUADS: usize = 65_536;
 
 struct ChunkMesh {
     vertex_array: WebGlVertexArrayObject,
@@ -34,7 +34,7 @@ pub struct Renderer {
     sun_color_uniform: WebGlUniformLocation,
     sky_color_uniform: WebGlUniformLocation,
     fog_range_uniform: WebGlUniformLocation,
-    /// Sperate pipeline for moving stuff: the chunk format packs positions as
+    /// Separate pipeline for moving stuff: the chunk format packs positions as
     /// chunk-local bytes, which can't express a walking avatar.
     entity_program: WebGlProgram,
     entity_vertex_array: WebGlVertexArrayObject,
@@ -146,7 +146,9 @@ impl Renderer {
         self.gl.bind_vertex_array(None);
 
         if let Some(mesh) = self.chunks.get_mut(&position) {
-            mesh.index_count = (quad_count * 6).min(MAX_QUADS * 6) as i32;
+            // the meshers can't exceed the budget, the clamp is a backstop so a
+            // bad count reads past the end of the shared index buffer
+            mesh.index_count = (quad_count.min(MAX_QUADS_PER_CHUNK) * 6) as i32;
         }
     }
 
@@ -189,16 +191,23 @@ impl Renderer {
         }
     }
 
-    pub fn retain_chunks(&mut self, keep: &HashSet<ChunkPosition>) {
+    /// Takes a predicate rather than a set: the caller would have to build one
+    /// every frame just to be read once and thrown away.
+    pub fn retain_chunks(&mut self, keep: impl Fn(ChunkPosition) -> bool) {
         let stale: Vec<ChunkPosition> = self
             .chunks
             .keys()
-            .filter(|position| !keep.contains(position))
+            .filter(|position| !keep(**position))
             .copied()
             .collect();
         for position in stale {
             self.drop_chunk(position);
         }
+    }
+
+    /// Drops every mesh, for when the world underneath is replaced wholesale.
+    pub fn clear_chunks(&mut self) {
+        self.retain_chunks(|_| false);
     }
 
     pub fn drawn_vertices(&self) -> i32 {
@@ -217,8 +226,9 @@ impl Renderer {
         self.gl.clear(Gl::COLOR_BUFFER_BIT | Gl::DEPTH_BUFFER_BIT);
     }
 
-    // capped at 2x, a retina screen would quadruple the fragment work
-    fn resize_to_display(&mut self) {
+    /// Matches the drawing buffer to the displayed size and returns it, capped
+    /// at 2x: a retina screen would otherwise quadruple the fragment work.
+    fn resize_to_display(&mut self) -> (u32, u32) {
         let width = self.canvas.client_width().max(1) as u32;
         let height = self.canvas.client_height().max(1) as u32;
         let pixel_ratio = web_sys::window()
@@ -234,25 +244,11 @@ impl Renderer {
         }
         self.gl
             .viewport(0, 0, buffer_width as i32, buffer_height as i32);
+        (buffer_width, buffer_height)
     }
 
     pub fn render(&mut self, eye: Vec3, direction: Vec3, sky: &SkyState) {
-        let width = self.canvas.client_width().max(1) as u32;
-        let height = self.canvas.client_height().max(1) as u32;
-        let pixel_ratio = web_sys::window()
-            .map(|window| window.device_pixel_ratio())
-            .unwrap_or(1.0)
-            .min(2.0);
-        let buffer_width = (width as f64 * pixel_ratio) as u32;
-        let buffer_height = (height as f64 * pixel_ratio) as u32;
-
-        if self.canvas.width() != buffer_width || self.canvas.height() != buffer_height {
-            self.canvas.set_width(buffer_width);
-            self.canvas.set_height(buffer_height);
-        }
-
-        self.gl
-            .viewport(0, 0, buffer_width as i32, buffer_height as i32);
+        let (buffer_width, buffer_height) = self.resize_to_display();
         self.gl
             .clear_color(sky.sky_color.x, sky.sky_color.y, sky.sky_color.z, 1.0);
         self.gl.clear(Gl::COLOR_BUFFER_BIT | Gl::DEPTH_BUFFER_BIT);
@@ -537,8 +533,8 @@ fn build_shared_index_buffer(gl: &Gl) -> Result<WebGlBuffer, JsValue> {
         .create_buffer()
         .ok_or_else(|| JsValue::from_str("Could not create the index buffer"))?;
 
-    let mut indices: Vec<u32> = Vec::with_capacity(MAX_QUADS * 6);
-    for quad in 0..MAX_QUADS as u32 {
+    let mut indices: Vec<u32> = Vec::with_capacity(MAX_QUADS_PER_CHUNK * 6);
+    for quad in 0..MAX_QUADS_PER_CHUNK as u32 {
         let base = quad * 4;
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }

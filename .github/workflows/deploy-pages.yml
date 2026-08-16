@@ -56,6 +56,13 @@ jobs:
         run: cargo test --release --locked
         working-directory: server
 
+      # both crates are clean, keep them that way
+      - name: Lint
+        run: |
+          rustup component add clippy
+          cargo clippy --release --all-targets --locked -- -D warnings
+          cargo clippy --release --all-targets --locked --manifest-path server/Cargo.toml -- -D warnings
+
       - name: Build WebAssembly
         run: wasm-pack build --target web --release
 

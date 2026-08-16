@@ -1,5 +1,5 @@
 //! Rusted Cube LAN server. Static files and the websocket out of one process,
-//! std only, one thread per conection. A few players on a local network doesn't
+//! std only, one thread per connection. A few players on a local network doesn't
 //! justify an async runtime, and tokio needs a newer compiler than the game
 //! builds on anyway.
 //!

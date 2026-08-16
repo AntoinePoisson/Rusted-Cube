@@ -104,16 +104,26 @@ skylight in the second, unpacked in the vertex shader. Positions are chunk
 local, the origin arrives as a uniform, and one index buffer is shared by every
 chunk.
 
-Chunk generation and meshing are both spread over frames. Doing the whole 7x7
-window in one go locked the main thread for almost 3 seconds on load.
+Chunk generation and meshing are both spread over frames, 8 chunks and 4ms of
+meshing per call. Doing the whole 7x7 window in one go was a visible hitch on
+load and every time the player crossed a chunk border.
 
 No shadow mapping. The sun moves, cast shadows don't follow.
 
-Meshing benchmark:
+Benchmarks, native release on the full 49 chunk window:
 
 ```sh
 cargo test --release -- --ignored --nocapture
 ```
+
+Generation is ~73us per chunk. Greedy meshing emits 51% of the quads the plain
+mesher does for 2.3x the CPU time, 11.5ms for the whole window against 5.1ms.
+That trade is worth it here: meshing happens once per chunk and is spread over
+frames, the quads are drawn every frame forever.
+
+The renderer sizes its shared index buffer from `MAX_QUADS_PER_CHUNK`, which is
+the densest mesh a chunk can hold: a 3D checkerboard, 36864 quads. A test builds
+exactly that and checks the bound is tight.
 
 ## Not done
 
