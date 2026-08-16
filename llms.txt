@@ -22,32 +22,32 @@ Things worth knowing:
 
 ## Source
 
-- [README](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/README.md):
+- [README](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/README.md):
   build instructions, controls, technical notes
-- [world.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/world.rs):
+- [world.rs](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/src/world.rs):
   chunks, terrain and trees, lighting, DDA raycast, greedy meshing
-- [renderer.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/renderer.rs):
+- [renderer.rs](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/src/renderer.rs):
   WebGL2 renderer, frustum culling, shaders, avatars, block outline
-- [game.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/game.rs):
+- [game.rs](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/src/game.rs):
   browser events, frame loop, per-frame meshing budget
-- [player.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/player.rs):
+- [player.rs](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/src/player.rs):
   camera, movement, collision
-- [perlin.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/perlin.rs):
+- [perlin.rs](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/src/perlin.rs):
   seeded 2D perlin and ridged noise
 
 ## Multiplayer
 
-- [protocol.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/protocol.rs):
+- [protocol.rs](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/src/protocol.rs):
   wire format, JSON encoded and parsed by hand, shared with the server
-- [net.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/src/net.rs):
+- [net.rs](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/src/net.rs):
   websocket client, optional
-- [server/src/main.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/server/src/main.rs):
+- [server/src/main.rs](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/server/src/main.rs):
   static files, connection threads, world state
-- [server/src/websocket.rs](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/server/src/websocket.rs):
+- [server/src/websocket.rs](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/server/src/websocket.rs):
   handshake and frame codec on std
 
 ## Optional
 
-- [LICENSE](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/LICENSE): MIT
-- [deploy-pages.yml](https://github.com/AntoinePoisson/Minecraft-In-Rust/blob/main/.github/workflows/deploy-pages.yml):
-  builds, tests and publishes to GitHub Pages
+- [LICENSE](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/LICENSE): MIT
+- [website-RustedCube.yml](https://github.com/AntoinePoisson/Rusted-Cube/blob/main/.github/workflows/website-RustedCube.yml):
+  builds, tests and publishes the site to GitHub Pages

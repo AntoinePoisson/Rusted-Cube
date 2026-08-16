@@ -269,6 +269,15 @@ h1 .title__line + .title__line {
   opacity: 0;
 }
 
+/* a failed boot has to stay readable, it is the only thing left on screen */
+.loader--failed {
+  max-width: min(34rem, calc(100vw - 3rem));
+  border-color: rgba(226, 130, 110, 0.6);
+  color: #f2c9bf;
+  text-transform: none;
+  text-align: center;
+}
+
 .loader__cube {
   width: 1rem;
   height: 1rem;

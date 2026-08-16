@@ -4,6 +4,8 @@ A small voxel sandbox running in the browser. Terrain, game loop, physics,
 collisions, raycasting and mesh building are Rust compiled to WebAssembly.
 Rendering talks to WebGL2 directly, no Three.js.
 
+**Play it: <https://antoinepoisson.github.io/Rusted-Cube>**
+
 ![title screen](docs/screenshot-title.png)
 
 ## What's in it
@@ -34,10 +36,15 @@ python3 -m http.server 8080
 
 Open http://localhost:8080 and click to grab the cursor.
 
-Pushing to `main` or `prod` deploys to GitHub Pages, see
-`.github/workflows/deploy-pages.yml`. CI pins Rust 1.76 because 1.82 changed the
-wasm ABI and broke the wasm-bindgen version this uses. The deployed site is
-static, so it is single player only.
+Pushing to `main` or `prod` deploys the site linked at the top to GitHub Pages,
+see the `website-RustedCube` workflow in `.github/workflows/`. CI pins Rust 1.76
+because 1.82 changed the wasm ABI and broke the wasm-bindgen version this uses.
+The deployed site is static, so it is single player only.
+
+Pages has to be set to **Settings > Pages > Source: GitHub Actions**. Left on
+"Deploy from a branch" it serves the repository as it is instead of what the
+workflow builds, and since `pkg/` is gitignored the wasm module 404s: the page
+paints, then sits on the loading screen forever.
 
 ## LAN play
 

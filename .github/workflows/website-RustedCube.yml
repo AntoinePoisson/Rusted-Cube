@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: website-RustedCube
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 
 # queue deployments instead of cancelling, don't throw away a green build
 concurrency:
-  group: github-pages
+  group: website-RustedCube
   cancel-in-progress: false
 
 env:
@@ -95,6 +95,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment:
+      # not renameable: actions/deploy-pages only publishes from the reserved
+      # github-pages environment, anything else fails the deployment
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
