@@ -66,30 +66,22 @@ body {
 
 h1 {
   margin: 0;
-  /* Plain system grotesque, no webfont to download. Flat terminals and closed
-     apertures give the blocky look the world itself has. */
-  font-family: "Helvetica Neue", Helvetica, Arial, "Segoe UI", system-ui,
-    sans-serif;
-  font-size: clamp(3.6rem, 11vw, 9rem);
-  /* 800 rather than 900: font-synthesis is off, so this picks the heaviest
-     real weight installed instead of asking for a faked one */
-  font-weight: 800;
-  line-height: 0.88;
-  /* tightened, the default gaps read as loose at this size */
-  letter-spacing: -0.03em;
+  font-family:
+    "Avenir Next", Avenir, "Century Gothic", "Trebuchet MS", sans-serif;
+  font-size: clamp(3.6rem, 10vw, 8.5rem);
+  font-weight: 700;
+  line-height: 0.86;
+  letter-spacing: -0.055em;
   color: #ffffff;
-  /* it sits over the live world, so it carries its own contrast */
-  text-shadow: 0 6px 24px rgba(8, 14, 10, 0.7);
+  text-shadow: 0 5px 22px rgba(8, 14, 10, 0.68);
 }
 
 h1 .title__line {
   display: block;
 }
 
-/* a stagger, kept small: upright letters need far less offset than the script
-   this replaced before the step reads */
 h1 .title__line + .title__line {
-  margin-left: 0.7em;
+  margin-left: 0.55em;
 }
 
 .intro__copy {
@@ -204,7 +196,6 @@ h1 .title__line + .title__line {
   transition: opacity 160ms ease;
 }
 
-/* one plain rectangle, hard color stops, no bevels, like the real thing */
 .hand__arm {
   position: absolute;
   right: 10%;
@@ -212,11 +203,8 @@ h1 .title__line + .title__line {
   width: 62%;
   height: 100%;
   background:
-    /* darker right side face */
     linear-gradient(90deg, transparent 0 78%, rgba(0, 0, 0, 0.22) 78% 100%),
-    /* left highlight */
     linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 13%, transparent 13%),
-    /* forearm on top, sleeve below */
     linear-gradient(#f2c294 0 40%, #e3ab7d 40% 46%, #2f9b9b 46% 52%, #268a8a 52%
         100%);
 }
@@ -247,8 +235,6 @@ h1 .title__line + .title__line {
   animation: hand-swing 260ms cubic-bezier(0.35, 0, 0.35, 1);
 }
 
-/* a badge, not a full screen curtain: covering the page delayed the LCP until
-   everything had meshed, for nothing */
 .loader {
   position: fixed;
   bottom: 3.5rem;
@@ -271,7 +257,6 @@ h1 .title__line + .title__line {
   opacity: 0;
 }
 
-/* a failed boot has to stay readable, it is the only thing left on screen */
 .loader--failed {
   max-width: min(34rem, calc(100vw - 3rem));
   border-color: rgba(226, 130, 110, 0.6);
@@ -339,12 +324,10 @@ noscript {
     max-width: 17rem;
   }
 
-  /* the stagger pushes the second line off screen here */
   h1 .title__line + .title__line {
-    margin-left: 0.4em;
+    margin-left: 0.3em;
   }
 
-  /* the full readout wraps into a pile on a phone, drop the profiling ones */
   .hud__world {
     gap: 0.75rem;
   }
@@ -355,7 +338,6 @@ noscript {
     display: none;
   }
 
-  /* under 12px is unreadable on a phone, the letter-spacing makes it worse */
   .eyebrow,
   .controls,
   .intro__hint,

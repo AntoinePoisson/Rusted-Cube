@@ -2,11 +2,10 @@
 name = "rusted-cube-server"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.67"
 description = "LAN server for Rusted Cube: serves the game and relays player state"
 license = "MIT"
-
-# none, everything is on std
-[dependencies]
+repository = "https://github.com/AntoinePoisson/Rusted-Cube"
 
 [profile.release]
 opt-level = 2

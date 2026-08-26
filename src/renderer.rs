@@ -7,11 +7,8 @@ use web_sys::{
     WebGlUniformLocation, WebGlVertexArrayObject,
 };
 
-use crate::world::{
-    ChunkPosition, CHUNK_SIZE, MAX_QUADS_PER_CHUNK, RENDER_DISTANCE, WORLD_HEIGHT,
-};
+use crate::world::{ChunkPosition, CHUNK_SIZE, MAX_QUADS_PER_CHUNK, RENDER_DISTANCE, WORLD_HEIGHT};
 
-/// two u32 per vertex, down from the 36 bytes a float layout would need
 const VERTEX_SIZE: i32 = 8;
 
 struct ChunkMesh {
@@ -34,8 +31,7 @@ pub struct Renderer {
     sun_color_uniform: WebGlUniformLocation,
     sky_color_uniform: WebGlUniformLocation,
     fog_range_uniform: WebGlUniformLocation,
-    /// Separate pipeline for moving stuff: the chunk format packs positions as
-    /// chunk-local bytes, which can't express a walking avatar.
+    // Chunk positions are packed into local bytes, so entities need their own pipeline.
     entity_program: WebGlProgram,
     entity_vertex_array: WebGlVertexArrayObject,
     outline_vertex_array: WebGlVertexArrayObject,
@@ -44,7 +40,7 @@ pub struct Renderer {
     entity_color_uniform: WebGlUniformLocation,
     entity_sun_direction_uniform: WebGlUniformLocation,
     view_projection: Mat4,
-    drawn_vertices: i32,
+    drawn_triangles: i32,
     visible_chunks: usize,
 }
 
@@ -113,7 +109,7 @@ impl Renderer {
             entity_color_uniform,
             entity_sun_direction_uniform,
             view_projection: Mat4::IDENTITY,
-            drawn_vertices: 0,
+            drawn_triangles: 0,
             visible_chunks: 0,
         })
     }
@@ -146,8 +142,6 @@ impl Renderer {
         self.gl.bind_vertex_array(None);
 
         if let Some(mesh) = self.chunks.get_mut(&position) {
-            // the meshers can't exceed the budget, the clamp is a backstop so a
-            // bad count reads past the end of the shared index buffer
             mesh.index_count = (quad_count.min(MAX_QUADS_PER_CHUNK) * 6) as i32;
         }
     }
@@ -158,15 +152,12 @@ impl Renderer {
 
         self.gl.bind_vertex_array(Some(&vertex_array));
         self.gl.bind_buffer(Gl::ARRAY_BUFFER, Some(&vertex_buffer));
-        // integer attributes, the shader unpacks the bit fields itself
         self.gl.enable_vertex_attrib_array(0);
         self.gl
             .vertex_attrib_i_pointer_with_i32(0, 1, Gl::UNSIGNED_INT, VERTEX_SIZE, 0);
         self.gl.enable_vertex_attrib_array(1);
         self.gl
             .vertex_attrib_i_pointer_with_i32(1, 1, Gl::UNSIGNED_INT, VERTEX_SIZE, 4);
-        // binding the shared index buffer inside the VAO means each draw call
-        // needs no further setup
         self.gl
             .bind_buffer(Gl::ELEMENT_ARRAY_BUFFER, Some(&self.index_buffer));
         self.gl.bind_vertex_array(None);
@@ -183,7 +174,6 @@ impl Renderer {
         })
     }
 
-    /// Without this every unloaded chunk leaks a buffer and a VAO.
     pub fn drop_chunk(&mut self, position: ChunkPosition) {
         if let Some(mesh) = self.chunks.remove(&position) {
             self.gl.delete_buffer(Some(&mesh.vertex_buffer));
@@ -191,8 +181,6 @@ impl Renderer {
         }
     }
 
-    /// Takes a predicate rather than a set: the caller would have to build one
-    /// every frame just to be read once and thrown away.
     pub fn retain_chunks(&mut self, keep: impl Fn(ChunkPosition) -> bool) {
         let stale: Vec<ChunkPosition> = self
             .chunks
@@ -205,20 +193,18 @@ impl Renderer {
         }
     }
 
-    /// Drops every mesh, for when the world underneath is replaced wholesale.
     pub fn clear_chunks(&mut self) {
         self.retain_chunks(|_| false);
     }
 
-    pub fn drawn_vertices(&self) -> i32 {
-        self.drawn_vertices
+    pub fn drawn_triangles(&self) -> i32 {
+        self.drawn_triangles
     }
 
     pub fn visible_chunks(&self) -> usize {
         self.visible_chunks
     }
 
-    // canvas is the largest element on the page, a blank one delays the LCP
     pub fn present_sky(&mut self, sky: &SkyState) {
         self.resize_to_display();
         self.gl
@@ -226,8 +212,7 @@ impl Renderer {
         self.gl.clear(Gl::COLOR_BUFFER_BIT | Gl::DEPTH_BUFFER_BIT);
     }
 
-    /// Matches the drawing buffer to the displayed size and returns it, capped
-    /// at 2x: a retina screen would otherwise quadruple the fragment work.
+    /// Matches the drawing buffer to the display, capped at 2x pixel density.
     fn resize_to_display(&mut self) -> (u32, u32) {
         let width = self.canvas.client_width().max(1) as u32;
         let height = self.canvas.client_height().max(1) as u32;
@@ -295,7 +280,7 @@ impl Renderer {
             .uniform2f(Some(&self.fog_range_uniform), fog_start, far * 0.95);
 
         self.view_projection = view_projection;
-        self.drawn_vertices = 0;
+        self.drawn_triangles = 0;
         self.visible_chunks = 0;
 
         for mesh in self.chunks.values() {
@@ -318,7 +303,7 @@ impl Renderer {
             self.gl
                 .draw_elements_with_i32(Gl::TRIANGLES, mesh.index_count, Gl::UNSIGNED_INT, 0);
 
-            self.drawn_vertices += mesh.index_count;
+            self.drawn_triangles += mesh.index_count / 3;
             self.visible_chunks += 1;
         }
         self.gl.bind_vertex_array(None);
@@ -343,8 +328,7 @@ impl Renderer {
         self.begin_entity_pass(sky);
         self.gl.bind_vertex_array(Some(&self.outline_vertex_array));
 
-        // slightly bigger than the block so the edges win the depth test against
-        // the faces they trace
+        // A small scale offset keeps the lines in front of the block faces.
         let center = Vec3::new(cell.x as f32, cell.y as f32, cell.z as f32) + Vec3::splat(0.5);
         let model = Mat4::from_translation(center) * Mat4::from_scale(Vec3::splat(1.006));
         self.gl.uniform_matrix4fv_with_f32_array(
@@ -358,7 +342,6 @@ impl Renderer {
         self.gl.bind_vertex_array(None);
     }
 
-    /// Call after `render`, it reuses the matrices and sky state computed there.
     pub fn render_avatars(&self, avatars: &[Avatar], sky: &SkyState) {
         if avatars.is_empty() {
             return;
@@ -368,7 +351,6 @@ impl Renderer {
         self.gl.bind_vertex_array(Some(&self.entity_vertex_array));
 
         for avatar in avatars {
-            // the model faces +Z, rotate that onto the avatar's forward
             let rotation = Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2 - avatar.yaw);
             let translation = Mat4::from_translation(avatar.position);
 
@@ -392,14 +374,12 @@ impl Renderer {
     }
 }
 
-/// offset from the feet, half extents, shade so limbs read apart from the torso
 struct BodyPart {
     center: Vec3,
     half: Vec3,
     shade: f32,
 }
 
-// head, torso, two arms, two legs. about 1.8 blocks tall
 const BODY: [BodyPart; 6] = [
     BodyPart {
         center: Vec3::new(0.0, 1.55, 0.0),
@@ -439,7 +419,6 @@ pub struct Avatar {
     pub color: Vec3,
 }
 
-// geometry never goes past the loaded window
 fn far_plane() -> f32 {
     let horizontal = ((RENDER_DISTANCE + 1) * CHUNK_SIZE) as f32 * std::f32::consts::SQRT_2;
     (horizontal + WORLD_HEIGHT as f32).ceil()
@@ -455,10 +434,9 @@ impl SkyState {
     /// `time_of_day` runs 0..1 over a cycle, 0.25 is noon.
     pub fn at(time_of_day: f32) -> Self {
         let angle = time_of_day * std::f32::consts::TAU;
-        let sun_direction = Vec3::new(angle.cos() * 0.6, angle.sin(), angle.cos() * 0.35)
-            .normalize_or_zero();
+        let sun_direction =
+            Vec3::new(angle.cos() * 0.6, angle.sin(), angle.cos() * 0.35).normalize_or_zero();
 
-        // 0 at night, 1 at noon
         let elevation = sun_direction.y.max(0.0);
         let dawn = (1.0 - elevation).powf(2.0);
 
@@ -470,13 +448,12 @@ impl SkyState {
             day_sky.lerp(dusk_sky, dawn) * (0.35 + 0.65 * elevation.powf(0.5))
                 + night_sky * (1.0 - elevation).powf(3.0)
         } else {
-            // below the horizon, fade to night over the first few degrees
             let dusk = (1.0 + sun_direction.y * 6.0).clamp(0.0, 1.0);
             night_sky.lerp(dusk_sky * 0.45, dusk)
         };
 
-        let sun_color = Vec3::new(1.0, 0.96, 0.88).lerp(Vec3::new(1.0, 0.72, 0.45), dawn)
-            * elevation.powf(0.4);
+        let sun_color =
+            Vec3::new(1.0, 0.96, 0.88).lerp(Vec3::new(1.0, 0.72, 0.45), dawn) * elevation.powf(0.4);
 
         Self {
             sun_direction,
@@ -495,7 +472,6 @@ struct Frustum {
 impl Frustum {
     fn from_matrix(matrix: Mat4) -> Self {
         let m = matrix.to_cols_array_2d();
-        // rows of the matrix, storage is column major m[col][row]
         let row = |index: usize| Vec4::new(m[0][index], m[1][index], m[2][index], m[3][index]);
         let (x, y, z, w) = (row(0), row(1), row(2), row(3));
 
@@ -512,8 +488,6 @@ impl Frustum {
 
     fn intersects_aabb(&self, min: Vec3, max: Vec3) -> bool {
         for plane in &self.planes {
-            // test the corner furthest along the normal, if that one is behind
-            // the plane the whole box is out
             let positive = Vec3::new(
                 if plane.x >= 0.0 { max.x } else { min.x },
                 if plane.y >= 0.0 { max.y } else { min.y },
@@ -527,7 +501,6 @@ impl Frustum {
     }
 }
 
-// every chunk draws its quads in the same order, so one buffer does for all
 fn build_shared_index_buffer(gl: &Gl) -> Result<WebGlBuffer, JsValue> {
     let buffer = gl
         .create_buffer()
@@ -549,7 +522,6 @@ fn build_shared_index_buffer(gl: &Gl) -> Result<WebGlBuffer, JsValue> {
     Ok(buffer)
 }
 
-// shares the entity program, hence the unused normal in the layout
 fn build_cube_outline(gl: &Gl, program: &WebGlProgram) -> Result<WebGlVertexArrayObject, JsValue> {
     const CORNERS: [[f32; 3]; 8] = [
         [-0.5, -0.5, -0.5],
@@ -606,7 +578,6 @@ fn build_unit_cube(gl: &Gl, program: &WebGlProgram) -> Result<WebGlVertexArrayOb
                 (normal[2] + up[2] * u + right[2] * v) * 0.5,
             ]
         };
-        // two triangles, CCW seen from outside
         for (u, v) in [
             (-1.0, -1.0),
             (-1.0, 1.0),

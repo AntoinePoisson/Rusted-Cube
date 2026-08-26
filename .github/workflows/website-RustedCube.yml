@@ -10,13 +10,12 @@ permissions:
   pages: write
   id-token: write
 
-# queue deployments instead of cancelling, don't throw away a green build
 concurrency:
   group: website-RustedCube
   cancel-in-progress: false
 
 env:
-  # not `stable`: 1.82 changed the wasm ABI and broke wasm-bindgen 0.2.87
+  # Rust 1.82 changed the wasm ABI used by this pinned wasm-bindgen release.
   RUST_VERSION: 1.76.0
   WASM_PACK_VERSION: 0.12.1
 
@@ -28,7 +27,6 @@ jobs:
 
       - name: Install Rust ${{ env.RUST_VERSION }}
         run: |
-          # clippy is not in the minimal profile, and the lint step needs it
           rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
           rustup default "$RUST_VERSION"
           rustup target add wasm32-unknown-unknown
@@ -57,9 +55,6 @@ jobs:
         run: cargo test --release --locked
         working-directory: server
 
-      # Both crates are clean under the pinned toolchain, keep them that way.
-      # Check against RUST_VERSION locally before touching this, clippy gains
-      # lints between releases and a newer one is not what CI runs.
       - name: Lint
         run: |
           cargo clippy --release --all-targets --locked -- -D warnings
@@ -74,7 +69,7 @@ jobs:
           cp bootstrap.js favicon.svg llms.txt _site/
           cp -r pkg _site/pkg
 
-          # inline the css, a separate request is a render-blocking round trip
+          # Keep the deployed page to one render-blocking request.
           python3 - <<'PY'
           from pathlib import Path
           html = Path("index.html").read_text()
@@ -85,22 +80,18 @@ jobs:
           Path("_site/index.html").write_text(html.replace(marker, f"<style>{css}</style>"))
           PY
 
-          # or Pages runs it through Jekyll and drops paths it thinks are private
           touch _site/.nojekyll
           ls -R _site | head -30
 
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
-          # dotfiles are dropped by default since v4, and .nojekyll is one
           include-hidden-files: true
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
     environment:
-      # not renameable: actions/deploy-pages only publishes from the reserved
-      # github-pages environment, anything else fails the deployment
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:

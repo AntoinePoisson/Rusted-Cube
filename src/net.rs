@@ -1,6 +1,4 @@
-//! WebSocket client for LAN play. Connecting is optional: served by anything
-//! other than the bundled server, the socket never opens and the game runs
-//! single player.
+//! Optional WebSocket client for LAN play.
 
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
@@ -25,14 +23,10 @@ pub struct Network {
 }
 
 impl Network {
-    /// `None` only when the URL can't be built at all, a refused connection
-    /// shows up later through `is_connected`.
     pub fn connect() -> Option<Self> {
         let window = web_sys::window()?;
 
-        // The server sets this attribute on the page it serves. Opening a socket
-        // that can't succeed makes the browser log a failed handshake on every
-        // static host, so no flag means solo, quietly.
+        // Static hosts leave this disabled, so they never probe a missing socket.
         let serves_multiplayer = window
             .document()
             .and_then(|document| document.document_element())
@@ -99,12 +93,10 @@ impl Network {
         *self.status.borrow() == Status::Open
     }
 
-    /// Distinct from `!is_connected()`, which is also true while still dialling.
     pub fn is_closed(&self) -> bool {
         *self.status.borrow() == Status::Closed
     }
 
-    /// Display only, the server never echoes a client's own messages back.
     pub fn set_id(&mut self, id: PlayerId) {
         self.id = Some(id);
     }
@@ -117,8 +109,6 @@ impl Network {
         self.inbox.borrow_mut().drain(..).collect()
     }
 
-    /// Rate limited, sending every frame is more traffic than the other side
-    /// can use anyway.
     pub fn send_pose(&mut self, pose: Pose, now: f64) {
         if !self.is_connected() || now - self.last_move_sent < MOVE_INTERVAL_MS {
             return;
@@ -135,6 +125,8 @@ impl Network {
     }
 
     fn send(&self, message: &ClientMessage) {
-        let _ = self.socket.send_with_str(&message.encode());
+        if self.socket.send_with_str(&message.encode()).is_err() {
+            *self.status.borrow_mut() = Status::Closed;
+        }
     }
 }

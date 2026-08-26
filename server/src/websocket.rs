@@ -1,15 +1,12 @@
-//! The bit of RFC 6455 this needs: opening handshake and text frames. No
-//! extensions, no fragmentation, no binary payloads.
+//! Minimal RFC 6455 handshake and frame codec. Extensions and fragmented
+//! messages are intentionally unsupported.
 
 use std::io::{Read, Write};
-use std::net::TcpStream;
 
 use crate::sha1;
 
-/// RFC 6455 1.3, concatenated with the client key
 const HANDSHAKE_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-/// don't allocate whatever a client claims
 const MAX_FRAME: u64 = 1 << 20;
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -39,25 +36,31 @@ pub fn base64(input: &[u8]) -> String {
 }
 
 pub fn accept_key(client_key: &str) -> String {
-    base64(&sha1::digest(format!("{client_key}{HANDSHAKE_GUID}").as_bytes()))
+    base64(&sha1::digest(
+        format!("{client_key}{HANDSHAKE_GUID}").as_bytes(),
+    ))
 }
 
 pub enum Frame {
     Text(String),
     Close,
     Ping(Vec<u8>),
-    /// anything we don't handle, caller just carries on
     Other,
 }
 
-/// `None` when the peer is gone or misbehaving.
-pub fn read_frame(stream: &mut TcpStream) -> Option<Frame> {
+pub fn read_frame(stream: &mut impl Read) -> Option<Frame> {
     let mut header = [0_u8; 2];
     stream.read_exact(&mut header).ok()?;
 
+    let finished = header[0] & 0x80 != 0;
+    let reserved = header[0] & 0x70;
     let opcode = header[0] & 0x0F;
     let masked = header[1] & 0x80 != 0;
     let mut length = (header[1] & 0x7F) as u64;
+
+    if !finished || reserved != 0 || !masked || !matches!(opcode, 0x1 | 0x2 | 0x8 | 0x9 | 0xA) {
+        return None;
+    }
 
     if length == 126 {
         let mut extended = [0_u8; 2];
@@ -69,24 +72,18 @@ pub fn read_frame(stream: &mut TcpStream) -> Option<Frame> {
         length = u64::from_be_bytes(extended);
     }
 
-    if length > MAX_FRAME {
+    let control_frame = opcode & 0x08 != 0;
+    if length > MAX_FRAME || (control_frame && length > 125) || (opcode == 0x8 && length == 1) {
         return None;
     }
 
-    // clients must mask, an unmasked client frame is a protocol error
     let mut mask = [0_u8; 4];
-    if masked {
-        stream.read_exact(&mut mask).ok()?;
-    } else if opcode != 0x8 {
-        return None;
-    }
+    stream.read_exact(&mut mask).ok()?;
 
     let mut payload = vec![0_u8; length as usize];
     stream.read_exact(&mut payload).ok()?;
-    if masked {
-        for (index, byte) in payload.iter_mut().enumerate() {
-            *byte ^= mask[index % 4];
-        }
+    for (index, byte) in payload.iter_mut().enumerate() {
+        *byte ^= mask[index % 4];
     }
 
     match opcode {
@@ -97,9 +94,8 @@ pub fn read_frame(stream: &mut TcpStream) -> Option<Frame> {
     }
 }
 
-fn write_frame(stream: &mut TcpStream, opcode: u8, payload: &[u8]) -> std::io::Result<()> {
+fn write_frame(stream: &mut impl Write, opcode: u8, payload: &[u8]) -> std::io::Result<()> {
     let mut frame = vec![0x80 | opcode];
-    // server frames are never masked
     match payload.len() {
         length if length < 126 => frame.push(length as u8),
         length if length <= u16::MAX as usize => {
@@ -116,21 +112,36 @@ fn write_frame(stream: &mut TcpStream, opcode: u8, payload: &[u8]) -> std::io::R
     stream.flush()
 }
 
-pub fn write_text(stream: &mut TcpStream, text: &str) -> std::io::Result<()> {
+pub fn write_text(stream: &mut impl Write, text: &str) -> std::io::Result<()> {
     write_frame(stream, 0x1, text.as_bytes())
 }
 
-pub fn write_pong(stream: &mut TcpStream, payload: &[u8]) -> std::io::Result<()> {
+pub fn write_pong(stream: &mut impl Write, payload: &[u8]) -> std::io::Result<()> {
     write_frame(stream, 0xA, payload)
 }
 
-pub fn write_close(stream: &mut TcpStream) -> std::io::Result<()> {
+pub fn write_close(stream: &mut impl Write) -> std::io::Result<()> {
     write_frame(stream, 0x8, &[])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+
+    fn client_frame(opcode: u8, payload: &[u8]) -> Vec<u8> {
+        assert!(payload.len() < 126);
+        let mask = [0x12, 0x34, 0x56, 0x78];
+        let mut frame = vec![0x80 | opcode, 0x80 | payload.len() as u8];
+        frame.extend_from_slice(&mask);
+        frame.extend(
+            payload
+                .iter()
+                .enumerate()
+                .map(|(index, byte)| byte ^ mask[index % mask.len()]),
+        );
+        frame
+    }
 
     #[test]
     fn base64_matches_known_values() {
@@ -149,5 +160,31 @@ mod tests {
             accept_key("dGhlIHNhbXBsZSBub25jZQ=="),
             "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
         );
+    }
+
+    #[test]
+    fn reads_a_masked_text_frame() {
+        let mut frame = Cursor::new(client_frame(0x1, b"hello"));
+        match read_frame(&mut frame) {
+            Some(Frame::Text(text)) => assert_eq!(text, "hello"),
+            _ => panic!("expected a text frame"),
+        }
+    }
+
+    #[test]
+    fn rejects_unmasked_or_fragmented_client_frames() {
+        let mut unmasked = Cursor::new(vec![0x88, 0x00]);
+        assert!(read_frame(&mut unmasked).is_none());
+
+        let mut fragmented = client_frame(0x1, b"hello");
+        fragmented[0] &= !0x80;
+        assert!(read_frame(&mut Cursor::new(fragmented)).is_none());
+    }
+
+    #[test]
+    fn server_frames_are_finished_and_unmasked() {
+        let mut bytes = Vec::new();
+        write_text(&mut bytes, "hello").expect("write frame");
+        assert_eq!(bytes, b"\x81\x05hello");
     }
 }

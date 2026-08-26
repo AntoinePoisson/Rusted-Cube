@@ -9,7 +9,7 @@ impl PerlinNoise {
             *value = index as u8;
         }
 
-        let mut state = seed.max(1);
+        let mut state = if seed == 0 { 0xA3C5_9AC3 } else { seed };
         for index in (1..values.len()).rev() {
             state ^= state << 13;
             state ^= state >> 17;
@@ -119,6 +119,13 @@ mod tests {
         let first = PerlinNoise::new(42).octave_sample(1.25, 9.5, 4);
         let second = PerlinNoise::new(42).octave_sample(1.25, 9.5, 4);
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn zero_and_one_are_distinct_seeds() {
+        let zero = PerlinNoise::new(0).octave_sample(1.25, 9.5, 4);
+        let one = PerlinNoise::new(1).octave_sample(1.25, 9.5, 4);
+        assert_ne!(zero, one);
     }
 
     #[test]

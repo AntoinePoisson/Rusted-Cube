@@ -2,8 +2,10 @@
 name = "rusted-cube"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.67"
 description = "A small voxel sandbox written in Rust and WebAssembly"
 license = "MIT"
+repository = "https://github.com/AntoinePoisson/Rusted-Cube"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -15,7 +17,6 @@ js-sys = "=0.3.64"
 # pinned, newer releases need a newer compiler than 1.67
 wasm-bindgen = "=0.2.87"
 
-# the server is its own crate
 [workspace]
 exclude = ["server"]
 
@@ -35,7 +36,6 @@ features = [
     "MessageEvent",
     "MouseEvent",
     "Performance",
-    "PointerEvent",
     "WebSocket",
     "WebGl2RenderingContext",
     "WebGlBuffer",
@@ -49,6 +49,6 @@ features = [
 [profile.release]
 codegen-units = 1
 lto = true
-# speed over size, meshing and noise dominate the frame budget
+# Meshing and noise are the hot paths.
 opt-level = 3
 strip = true

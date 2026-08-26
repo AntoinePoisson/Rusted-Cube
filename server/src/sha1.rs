@@ -1,6 +1,4 @@
-//! SHA-1, only here because RFC 6455 makes the server echo a hash of the
-//! client's key. Not used for anything security related, don't reuse it as if
-//! it were.
+//! SHA-1 for the RFC 6455 handshake. It is not used as a security primitive.
 
 pub fn digest(message: &[u8]) -> [u8; 20] {
     let mut state: [u32; 5] = [
@@ -11,7 +9,6 @@ pub fn digest(message: &[u8]) -> [u8; 20] {
         0xC3D2_E1F0,
     ];
 
-    // pad to a multiple of 64: 0x80, zeroes, then the bit length
     let mut padded = message.to_vec();
     let bit_length = (message.len() as u64) * 8;
     padded.push(0x80);
@@ -70,8 +67,6 @@ mod tests {
     use super::digest;
     use std::fmt::Write;
 
-    // appended in place rather than collected from a String per byte, which is
-    // what clippy::format_collect is about
     fn hex(bytes: &[u8]) -> String {
         let mut out = String::with_capacity(bytes.len() * 2);
         for byte in bytes {
@@ -98,7 +93,6 @@ mod tests {
         );
     }
 
-    // hits the multi-block path and the length encoding
     #[test]
     fn handles_input_longer_than_one_block() {
         assert_eq!(

@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- the LAN server flips data-multiplayer to "1" as it serves this file -->
+<!-- Set to 1 by the bundled LAN server. -->
 <html lang="en" data-multiplayer="0">
   <head>
     <meta charset="utf-8" />
@@ -12,7 +12,6 @@
     <title>Rusted Cube - Rust voxel sandbox</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
-    <!-- without these it's 3 sequential round trips before anything is drawn -->
     <link rel="modulepreload" href="./pkg/rusted_cube.js" />
     <link
       rel="preload"
@@ -34,7 +33,10 @@
 
       <section class="intro" aria-label="Game controls">
         <p class="eyebrow">Rust + WebAssembly + WebGL2</p>
-        <h1><span class="title__line">Rusted</span><span class="title__line">Cube</span></h1>
+        <h1>
+          <span class="title__line">Rusted</span>
+          <span class="title__line">Cube</span>
+        </h1>
         <p class="intro__copy">
           An endless chunked world generated and simulated in Rust. Click anywhere to explore.
         </p>
@@ -44,7 +46,7 @@
           <div><dt>Jump</dt><dd>Space</dd></div>
           <div><dt>Break</dt><dd>Left click</dd></div>
           <div><dt>Place</dt><dd>Right click</dd></div>
-          <div><dt>Run</dt><dd>Shift</dd></div>
+          <div><dt>Sprint</dt><dd>Shift</dd></div>
           <div><dt>New world</dt><dd>R</dd></div>
         </dl>
         <p class="intro__hint">Click to capture the cursor</p>

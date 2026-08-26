@@ -1,15 +1,17 @@
-//! Wire format shared by the client and the LAN server. JSON, encoded and
-//! parsed by hand: serde drags `serde_derive` and its proc-macro chain in, and
-//! those need a newer compiler than this builds on. Costs a couple hundred
-//! lines and keeps the wasm smaller.
+//! Wire format shared by the client and the LAN server.
+//!
+//! JSON stays hand-written here to keep serde's proc-macro stack out of the
+//! WebAssembly build and remain compatible with the project's Rust toolchain.
 
 pub type PlayerId = u32;
 
-/// not 8080, that one is always taken already
 pub const DEFAULT_PORT: u16 = 8118;
 
-/// ms between position reports, the other side interpolates
 pub const MOVE_INTERVAL_MS: f64 = 50.0;
+
+pub const MAX_BLOCK_ID: u8 = 7;
+
+pub const WORLD_HEIGHT: i32 = 48;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pose {
@@ -22,7 +24,7 @@ pub struct Pose {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Edit {
     pub position: [i32; 3],
-    /// `Block` discriminant, plain int so this doesn't depend on the world
+    /// `Block` discriminant. Kept as an integer to avoid coupling this module to `world`.
     pub block: u8,
 }
 
@@ -41,7 +43,6 @@ pub enum ServerMessage {
         edits: Vec<Edit>,
         players: Vec<(PlayerId, Pose)>,
     },
-    /// Without this a player who doesn't move stays invisible to everyone.
     PlayerJoined {
         id: PlayerId,
         pose: Pose,
@@ -57,8 +58,6 @@ pub enum ServerMessage {
         edit: Edit,
     },
 }
-
-// --- encoding
 
 fn write_pose(out: &mut String, pose: &Pose) {
     out.push_str(&format!(
@@ -196,12 +195,9 @@ impl ServerMessage {
     }
 }
 
-// --- parsing
-
-/// Just enough JSON for this protocol: objects, arrays, numbers, plain strings.
-/// Not a general parser, it rejects whatever it doesn't understand.
+/// Small JSON subset used by the protocol. This is deliberately not a general parser.
 #[derive(Clone, Debug, PartialEq)]
-pub enum Json {
+enum Json {
     Number(f64),
     Text(String),
     Array(Vec<Json>),
@@ -211,12 +207,11 @@ pub enum Json {
 }
 
 impl Json {
-    pub fn parse(text: &str) -> Option<Self> {
+    fn parse(text: &str) -> Option<Self> {
         let bytes: Vec<char> = text.chars().collect();
         let mut cursor = 0;
         let value = parse_value(&bytes, &mut cursor)?;
         skip_whitespace(&bytes, &mut cursor);
-        // trailing junk means it's not what it claims to be
         if cursor == bytes.len() {
             Some(value)
         } else {
@@ -250,16 +245,43 @@ impl Json {
 
     fn as_u32(&self) -> Option<u32> {
         let number = self.as_f64()?;
-        if number.is_finite() && (0.0..=u32::MAX as f64).contains(&number) {
+        if number.is_finite() && number.fract() == 0.0 && (0.0..=u32::MAX as f64).contains(&number)
+        {
             Some(number as u32)
         } else {
             None
         }
     }
 
-    fn as_array(&self) -> Option<&Vec<Json>> {
+    fn as_i32(&self) -> Option<i32> {
+        let number = self.as_f64()?;
+        if number.is_finite()
+            && number.fract() == 0.0
+            && (i32::MIN as f64..=i32::MAX as f64).contains(&number)
+        {
+            Some(number as i32)
+        } else {
+            None
+        }
+    }
+
+    fn as_u8(&self) -> Option<u8> {
+        let number = self.as_f64()?;
+        if number.is_finite() && number.fract() == 0.0 && (0.0..=u8::MAX as f64).contains(&number) {
+            Some(number as u8)
+        } else {
+            None
+        }
+    }
+
+    fn as_f32(&self) -> Option<f32> {
+        let value = self.as_f64()? as f32;
+        value.is_finite().then_some(value)
+    }
+
+    fn as_array(&self) -> Option<&[Json]> {
         match self {
-            Json::Array(items) => Some(items),
+            Json::Array(items) => Some(items.as_slice()),
             _ => None,
         }
     }
@@ -271,12 +293,12 @@ impl Json {
         }
         Some(Pose {
             position: [
-                position[0].as_f64()? as f32,
-                position[1].as_f64()? as f32,
-                position[2].as_f64()? as f32,
+                position[0].as_f32()?,
+                position[1].as_f32()?,
+                position[2].as_f32()?,
             ],
-            yaw: self.get("yaw")?.as_f64()? as f32,
-            pitch: self.get("pitch")?.as_f64()? as f32,
+            yaw: self.get("yaw")?.as_f32()?,
+            pitch: self.get("pitch")?.as_f32()?,
         })
     }
 
@@ -285,18 +307,16 @@ impl Json {
         if position.len() != 3 {
             return None;
         }
-        let block = self.get("block")?.as_f64()?;
-        if !(0.0..=255.0).contains(&block) {
+        let position = [
+            position[0].as_i32()?,
+            position[1].as_i32()?,
+            position[2].as_i32()?,
+        ];
+        let block = self.get("block")?.as_u8()?;
+        if !(0..WORLD_HEIGHT).contains(&position[1]) || block > MAX_BLOCK_ID {
             return None;
         }
-        Some(Edit {
-            position: [
-                position[0].as_f64()? as i32,
-                position[1].as_f64()? as i32,
-                position[2].as_f64()? as i32,
-            ],
-            block: block as u8,
-        })
+        Some(Edit { position, block })
     }
 }
 
@@ -330,7 +350,7 @@ fn parse_literal(bytes: &[char], cursor: &mut usize, word: &str, value: Json) ->
 }
 
 fn parse_object(bytes: &[char], cursor: &mut usize) -> Option<Json> {
-    *cursor += 1; // '{'
+    *cursor += 1;
     let mut entries = Vec::new();
     skip_whitespace(bytes, cursor);
     if *bytes.get(*cursor)? == '}' {
@@ -360,7 +380,7 @@ fn parse_object(bytes: &[char], cursor: &mut usize) -> Option<Json> {
 }
 
 fn parse_array(bytes: &[char], cursor: &mut usize) -> Option<Json> {
-    *cursor += 1; // '['
+    *cursor += 1;
     let mut items = Vec::new();
     skip_whitespace(bytes, cursor);
     if *bytes.get(*cursor)? == ']' {
@@ -405,10 +425,10 @@ fn parse_string(bytes: &[char], cursor: &mut usize) -> Option<String> {
                     '"' => '"',
                     '\\' => '\\',
                     '/' => '/',
-                    // \uXXXX isn't used here
                     _ => return None,
                 });
             }
+            '\0'..='\u{1f}' => return None,
             _ => text.push(ch),
         }
     }
@@ -416,16 +436,46 @@ fn parse_string(bytes: &[char], cursor: &mut usize) -> Option<String> {
 
 fn parse_number(bytes: &[char], cursor: &mut usize) -> Option<Json> {
     let start = *cursor;
-    if matches!(bytes.get(*cursor), Some('-') | Some('+')) {
+    if matches!(bytes.get(*cursor), Some('-')) {
         *cursor += 1;
     }
-    while matches!(bytes.get(*cursor), Some(c) if c.is_ascii_digit() || *c == '.' || *c == 'e' || *c == 'E' || *c == '-' || *c == '+')
-    {
+
+    match bytes.get(*cursor)? {
+        '0' => *cursor += 1,
+        '1'..='9' => {
+            *cursor += 1;
+            while matches!(bytes.get(*cursor), Some(c) if c.is_ascii_digit()) {
+                *cursor += 1;
+            }
+        }
+        _ => return None,
+    }
+
+    if matches!(bytes.get(*cursor), Some('.')) {
         *cursor += 1;
+        let decimals = *cursor;
+        while matches!(bytes.get(*cursor), Some(c) if c.is_ascii_digit()) {
+            *cursor += 1;
+        }
+        if decimals == *cursor {
+            return None;
+        }
     }
-    if start == *cursor {
-        return None;
+
+    if matches!(bytes.get(*cursor), Some('e') | Some('E')) {
+        *cursor += 1;
+        if matches!(bytes.get(*cursor), Some('-') | Some('+')) {
+            *cursor += 1;
+        }
+        let exponent = *cursor;
+        while matches!(bytes.get(*cursor), Some(c) if c.is_ascii_digit()) {
+            *cursor += 1;
+        }
+        if exponent == *cursor {
+            return None;
+        }
     }
+
     let text: String = bytes[start..*cursor].iter().collect();
     text.parse::<f64>().ok().map(Json::Number)
 }
@@ -460,9 +510,15 @@ mod tests {
                 ],
                 players: vec![(9, pose())],
             },
-            ServerMessage::PlayerJoined { id: 4, pose: pose() },
+            ServerMessage::PlayerJoined {
+                id: 4,
+                pose: pose(),
+            },
             ServerMessage::PlayerLeft { id: 3 },
-            ServerMessage::PlayerMoved { id: 3, pose: pose() },
+            ServerMessage::PlayerMoved {
+                id: 3,
+                pose: pose(),
+            },
             ServerMessage::BlockChanged {
                 edit: Edit {
                     position: [-4, 5, -6],
@@ -508,8 +564,6 @@ mod tests {
         assert_eq!(ServerMessage::decode(&message.encode()), Some(message));
     }
 
-    // anything off the network is untrusted, malformed input returns None and
-    // must never panic
     #[test]
     fn malformed_input_is_rejected() {
         for text in [
@@ -521,22 +575,40 @@ mod tests {
             r#"{"type":"PlayerLeft"}"#,
             r#"{"type":"PlayerLeft","id":"three"}"#,
             r#"{"type":"PlayerLeft","id":-1}"#,
+            r#"{"type":"PlayerLeft","id":1.5}"#,
             r#"{"type":"BlockChanged","edit":{"position":[1,2],"block":1}}"#,
             r#"{"type":"BlockChanged","edit":{"position":[1,2,3],"block":900}}"#,
+            r#"{"type":"BlockChanged","edit":{"position":[1,2,3],"block":8}}"#,
+            r#"{"type":"BlockChanged","edit":{"position":[1,48,3],"block":1}}"#,
+            r#"{"type":"BlockChanged","edit":{"position":[1.2,2,3],"block":1}}"#,
+            r#"{"type":"BlockChanged","edit":{"position":[1,2,3],"block":1.5}}"#,
             r#"{"type":"PlayerMoved","id":1,"pose":{"position":[1,2,3],"yaw":0}}"#,
+            r#"{"type":"PlayerMoved","id":1,"pose":{"position":[1e999,2,3],"yaw":0,"pitch":0}}"#,
             r#"{"type":"PlayerLeft","id":1} trailing"#,
         ] {
             assert_eq!(ServerMessage::decode(text), None, "should reject {text:?}");
         }
+
+        assert_eq!(
+            ClientMessage::decode(r#"{"type":"SetBlock","edit":{"position":[1,-1,3],"block":1}}"#),
+            None
+        );
     }
 
     #[test]
     fn parser_handles_whitespace_and_escapes() {
         let value = Json::parse(" { \"a\" : [ 1 , 2.5 ] , \"b\" : \"x\\ny\" } ").expect("parses");
         assert_eq!(
-            value.get("a").and_then(Json::as_array).map(Vec::len),
+            value.get("a").and_then(Json::as_array).map(<[Json]>::len),
             Some(2)
         );
         assert_eq!(value.get("b").and_then(Json::as_str), Some("x\ny"));
+    }
+
+    #[test]
+    fn parser_rejects_non_json_number_forms_and_control_characters() {
+        for text in ["+1", ".5", "1.", "01", "1e", "\"line\nfeed\""] {
+            assert_eq!(Json::parse(text), None, "should reject {text:?}");
+        }
     }
 }

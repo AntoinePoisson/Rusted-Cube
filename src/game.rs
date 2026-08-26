@@ -20,15 +20,12 @@ use crate::{
 };
 
 const DEFAULT_SEED: u32 = 1_337;
-/// seconds for a full day/night cycle
 const DAY_LENGTH: f32 = 240.0;
 const REACH: f32 = 6.0;
-/// same cadence as Minecraft
 const ACTION_COOLDOWN_MS: f64 = 250.0;
-/// must match the swing animation in styles.css
+// Keep in sync with the CSS hand swing.
 const SWING_MS: f64 = 260.0;
 const MESH_BUDGET_MS: f64 = 4.0;
-/// touching the DOM every frame costs more than the readout is worth
 const HUD_INTERVAL_MS: f64 = 250.0;
 
 type AnimationCallback = Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>>;
@@ -43,8 +40,6 @@ struct Hud {
     players: HtmlElement,
 }
 
-/// Kept between two network updates so remote players move smoothly instead of
-/// teleporting 20 times a second.
 struct RemotePlayer {
     from: Pose,
     to: Pose,
@@ -81,7 +76,6 @@ impl RemotePlayer {
                 lerp(self.from.position[1], self.to.position[1]),
                 lerp(self.from.position[2], self.to.position[2]),
             ],
-            // short way round, crossing +-pi shouldn't spin the avatar
             yaw: self.from.yaw + wrap_angle(self.to.yaw - self.from.yaw) * self.blend,
             pitch: lerp(self.from.pitch, self.to.pitch),
         }
@@ -128,14 +122,13 @@ struct Game {
     hud: Hud,
     hand: HtmlElement,
     hand_swing_until: f64,
-    // TODO: one slot only for now, should be a real hotbar
+    // One slot for now; this can become a hotbar later.
     held_block: Option<Block>,
     next_action_at: f64,
     network: Option<Network>,
     remote_players: HashMap<PlayerId, RemotePlayer>,
     loader: Option<HtmlElement>,
     loader_hidden: bool,
-    /// cached, going through window() on every meshed chunk isn't free
     performance: Performance,
 }
 
@@ -150,9 +143,6 @@ impl Game {
         let now = performance.now();
         let time_of_day = 0.18;
 
-        // Get the sky on screen before generating anything. The canvas is the
-        // biggest element on the page, leaving it blank through chunk
-        // generation pushed the largest contentful paint out by ~1s.
         let mut renderer = Renderer::new(canvas)?;
         renderer.present_sky(&SkyState::at(time_of_day));
 
@@ -181,15 +171,12 @@ impl Game {
             hand_swing_until: 0.0,
             held_block: None,
             next_action_at: 0.0,
-            // if nothing answers we just stay solo
             network: Network::connect(),
             remote_players: HashMap::new(),
             loader,
             loader_hidden: false,
             performance,
         };
-        // The starting window is meshed across frames like any other. Building
-        // all 49 up front locked the main thread for seconds.
         game.process_pending_meshes();
         Ok(game)
     }
@@ -202,7 +189,6 @@ impl Game {
 
         self.process_network(now, delta);
 
-        // in multiplayer the world isn't yours to reset
         if self.input.take_regeneration_request() && !self.is_online() {
             self.regenerate();
         }
@@ -216,7 +202,8 @@ impl Game {
         self.process_pending_meshes();
         self.update_loader();
         let world = &self.world;
-        self.renderer.retain_chunks(|position| world.is_loaded(position));
+        self.renderer
+            .retain_chunks(|position| world.is_loaded(position));
 
         let hand_class = if now < self.hand_swing_until {
             "hand hand--swing"
@@ -251,9 +238,6 @@ impl Game {
             return;
         };
 
-        // The server can't send PlayerLeft for a socket that already died, so
-        // without this everyone who was online stays frozen in the world while
-        // the HUD claims we are solo.
         if network.is_closed() {
             self.remote_players.clear();
             return;
@@ -268,8 +252,6 @@ impl Game {
                     players,
                 } => {
                     network.set_id(id);
-                    // the server owns the world, rebuild ours from its seed and
-                    // replay everything done before we arrived
                     self.seed = seed;
                     self.world = World::generate(seed);
                     self.player = spawn_player(&self.world);
@@ -339,8 +321,6 @@ impl Game {
             .collect()
     }
 
-    /// Breaking and placing share one cooldown, that's what gives the game its
-    /// rhythm instead of firing every frame.
     fn handle_block_actions(&mut self, now: f64) {
         let wants_break = self.input.take_break_request();
         let wants_place = self.input.take_place_request();
@@ -363,7 +343,10 @@ impl Game {
             self.start_swing(now);
         } else if let Some(block) = self.held_block {
             let (min, max) = self.player.bounds();
-            if let Some(position) = self.world.place_block(eye, direction, REACH, block, min, max) {
+            if let Some(position) = self
+                .world
+                .place_block(eye, direction, REACH, block, min, max)
+            {
                 self.broadcast_edit(position, block);
             }
             self.start_swing(now);
@@ -458,16 +441,18 @@ impl Game {
             .set_inner_text(&format!("MESH {:.2} MS", self.last_mesh_ms));
         self.hud.vertices.set_inner_text(&format!(
             "TRIS {}K",
-            self.renderer.drawn_vertices() / 3_000
+            self.renderer.drawn_triangles() / 1_000
         ));
-        self.hud.players.set_inner_text(&match self.network.as_ref() {
-            Some(network) if network.is_connected() => format!(
-                "P{} ONLINE {}",
-                network.id().unwrap_or(0),
-                self.remote_players.len() + 1
-            ),
-            _ => "SOLO".to_owned(),
-        });
+        self.hud
+            .players
+            .set_inner_text(&match self.network.as_ref() {
+                Some(network) if network.is_connected() => format!(
+                    "P{} ONLINE {}",
+                    network.id().unwrap_or(0),
+                    self.remote_players.len() + 1
+                ),
+                _ => "SOLO".to_owned(),
+            });
     }
 }
 
@@ -525,11 +510,18 @@ fn register_keyboard(window: &Window, game: Rc<RefCell<Game>>) -> Result<(), JsV
     window.add_event_listener_with_callback("keydown", keydown.as_ref().unchecked_ref())?;
     keydown.forget();
 
+    let keyup_game = Rc::clone(&game);
     let keyup = Closure::<dyn FnMut(KeyboardEvent)>::new(move |event: KeyboardEvent| {
-        game.borrow_mut().input.set_key(event.code(), false);
+        keyup_game.borrow_mut().input.set_key(event.code(), false);
     });
     window.add_event_listener_with_callback("keyup", keyup.as_ref().unchecked_ref())?;
     keyup.forget();
+
+    let blur = Closure::<dyn FnMut()>::new(move || {
+        game.borrow_mut().input.clear();
+    });
+    window.add_event_listener_with_callback("blur", blur.as_ref().unchecked_ref())?;
+    blur.forget();
     Ok(())
 }
 
@@ -555,11 +547,11 @@ fn register_mouse(
     canvas.add_event_listener_with_callback("mousedown", mousedown.as_ref().unchecked_ref())?;
     mousedown.forget();
 
-    // otherwise right click opens the context menu instead of placing
     let context_menu = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
         event.prevent_default();
     });
-    canvas.add_event_listener_with_callback("contextmenu", context_menu.as_ref().unchecked_ref())?;
+    canvas
+        .add_event_listener_with_callback("contextmenu", context_menu.as_ref().unchecked_ref())?;
     context_menu.forget();
 
     let motion_document = document.clone();
@@ -615,7 +607,6 @@ fn start_animation_loop(window: &Window, game: Rc<RefCell<Game>>) -> Result<(), 
     Ok(())
 }
 
-/// Unknown discriminants get dropped, this comes off the network.
 fn apply_edit(world: &mut World, edit: Edit) {
     let Some(block) = Block::from_u8(edit.block) else {
         return;
@@ -623,7 +614,6 @@ fn apply_edit(world: &mut World, edit: Edit) {
     world.set(IVec3::from_array(edit.position), block);
 }
 
-// TODO: always spawns on 0,0. Finding a flat-ish spot would be nicer.
 fn spawn_player(world: &World) -> Player {
     let x = 0;
     let z = 0;

@@ -5,24 +5,19 @@ use glam::{IVec3, Vec3};
 use crate::perlin::PerlinNoise;
 
 pub const CHUNK_SIZE: i32 = 16;
-pub const WORLD_HEIGHT: i32 = 48;
+pub const WORLD_HEIGHT: i32 = crate::protocol::WORLD_HEIGHT;
 pub const RENDER_DISTANCE: i32 = 3;
 const SEA_LEVEL: i32 = 12;
 const MAX_SKYLIGHT: u8 = 15;
 
-/// How far a tree may spill outside the chunk owning its trunk. Chunks scan this
-/// much into their neighbors so canopies don't get cut at a border.
+/// Maximum distance a canopy can extend beyond its trunk's chunk.
 const TREE_MARGIN: i32 = 3;
 
 const GENERATION_BUDGET: usize = 8;
 
-/// Worst case for a single chunk: a 3D checkerboard, half the cells solid and
-/// all six faces of every one of them exposed. Nothing beats it, a denser fill
-/// only buries faces. The renderer sizes its shared index buffer from this.
+/// Quad count of a 3D checkerboard, the densest possible chunk mesh.
 pub const MAX_QUADS_PER_CHUNK: usize = (CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE) as usize / 2 * 6;
 
-/// One block of padding is enough to mesh a chunk: faces need the direct
-/// neighbor, AO needs the diagonals.
 const PAD: i32 = 1;
 const PADDED_SIZE: i32 = CHUNK_SIZE + 2 * PAD;
 
@@ -40,8 +35,6 @@ pub enum Block {
 }
 
 impl Block {
-    /// Every variant in discriminant order, so `from_u8` and the `repr(u8)`
-    /// values can't drift apart. A test pins the two together.
     const ALL: [Block; 8] = [
         Block::Air,
         Block::Grass,
@@ -53,7 +46,6 @@ impl Block {
         Block::Snow,
     ];
 
-    /// Unknown discriminants are rejected, this comes off the network.
     pub fn from_u8(value: u8) -> Option<Self> {
         Self::ALL.get(value as usize).copied()
     }
@@ -67,7 +59,6 @@ impl Block {
     }
 }
 
-/// grass takes two slots, green on top and earthy on the sides
 #[derive(Clone, Copy)]
 #[repr(u8)]
 enum Material {
@@ -115,8 +106,7 @@ impl ChunkPosition {
 struct Chunk {
     blocks: Vec<Block>,
     skylight: Vec<u8>,
-    /// One past the highest non-air block, so meshing stops early instead of
-    /// scanning 48 levels of mostly empty sky.
+    /// One past the highest non-air block.
     max_height: i32,
 }
 
@@ -146,8 +136,6 @@ impl Chunk {
         chunk
     }
 
-    // hashed from world coords, so every chunk overlapping a canopy gets the
-    // same blocks with no cross-chunk talk
     fn plant_trees(&mut self, pos: ChunkPosition, noise: &PerlinNoise, seed: u32) {
         let origin_x = pos.x * CHUNK_SIZE;
         let origin_z = pos.z * CHUNK_SIZE;
@@ -166,7 +154,6 @@ impl Chunk {
         }
     }
 
-    // local_x/local_z can land outside the chunk, set_raw drops those
     fn carve_tree(&mut self, local_x: i32, local_z: i32, ground: i32, trunk_height: i32) {
         let base = ground + 1;
         let top = base + trunk_height;
@@ -175,7 +162,6 @@ impl Chunk {
             self.set_raw(IVec3::new(local_x, y, local_z), Block::Wood);
         }
 
-        // two wide layers then a small cap, the usual oak shape
         for (offset, radius) in [(-2_i32, 2_i32), (-1, 2), (0, 1), (1, 1)] {
             let y = top + offset;
             if y >= WORLD_HEIGHT {
@@ -183,7 +169,6 @@ impl Chunk {
             }
             for dz in -radius..=radius {
                 for dx in -radius..=radius {
-                    // clip the corners or the canopy looks cubic
                     if dx.abs() == radius && dz.abs() == radius && radius > 1 {
                         continue;
                     }
@@ -210,8 +195,6 @@ impl Chunk {
         }
     }
 
-    /// Vertical only, so columns are independent and it stays continuous across
-    /// borders. Horizontal softening happens per vertex at mesh time.
     fn recompute_skylight(&mut self) {
         for z in 0..CHUNK_SIZE {
             for x in 0..CHUNK_SIZE {
@@ -242,7 +225,9 @@ impl Chunk {
     }
 
     fn light(&self, local: IVec3) -> u8 {
-        self.index(local).map(|index| self.skylight[index]).unwrap_or(MAX_SKYLIGHT)
+        self.index(local)
+            .map(|index| self.skylight[index])
+            .unwrap_or(MAX_SKYLIGHT)
     }
 
     fn set_raw(&mut self, local: IVec3, block: Block) -> bool {
@@ -282,8 +267,7 @@ impl Chunk {
     }
 }
 
-/// One chunk plus a one block skirt of its neighbors, flattened. Meshing reads
-/// this instead of the chunk HashMap, which turns ~2.8M hashed lookups into 9.
+/// Flattened chunk data with a one-block border from its neighbors.
 struct Halo {
     blocks: Vec<Block>,
     skylight: Vec<u8>,
@@ -318,14 +302,12 @@ impl Halo {
 }
 
 pub struct ChunkMesh {
-    /// two u32 per vertex, four vertices per quad
     pub vertices: Vec<u32>,
     pub quad_count: usize,
 }
 
 pub struct World {
     chunks: HashMap<ChunkPosition, Chunk>,
-    /// grouped by chunk so reloading one doesn't scan every edit ever made
     edits: HashMap<ChunkPosition, HashMap<IVec3, Block>>,
     noise: PerlinNoise,
     seed: u32,
@@ -358,7 +340,6 @@ impl World {
         if !changed {
             return false;
         }
-
         let removed: Vec<ChunkPosition> = self
             .chunks
             .keys()
@@ -370,7 +351,6 @@ impl World {
             self.dirty.remove(pos);
         }
 
-        // nearest first, the ground under the player should exist before the horizon
         let mut missing: Vec<ChunkPosition> = desired
             .iter()
             .filter(|pos| !self.chunks.contains_key(pos))
@@ -382,9 +362,6 @@ impl World {
             dx * dx + dz * dz
         });
 
-        // Capped per call. Generating a whole window at once blocked the main
-        // thread, both on load and every time the player crossed a border. The
-        // caller runs every frame so the rest catches up.
         for pos in missing.into_iter().take(GENERATION_BUDGET) {
             let mut chunk = Chunk::generate(pos, &self.noise, self.seed);
             if let Some(edits) = self.edits.get(&pos) {
@@ -451,11 +428,7 @@ impl World {
 
         let chunk_pos = ChunkPosition::from_world(position.x, position.z);
 
-        // Recorded before touching the chunk, and even when there is no chunk to
-        // touch. Edits arriving over the network land anywhere on the map, most
-        // of it outside the loaded window: dropping those lost every build a
-        // joining client was told about, and they never came back because the
-        // chunk regenerated from bare terrain.
+        // Keep edits even while their chunk is unloaded.
         self.edits
             .entry(chunk_pos)
             .or_default()
@@ -468,7 +441,6 @@ impl World {
             return false;
         }
 
-        // a block on a border changes the neighbor's visible faces and AO too
         let local = local_position(position);
         self.dirty.insert(chunk_pos);
         for dz in -1..=1 {
@@ -517,11 +489,22 @@ impl World {
             direction.z.signum() as i32,
         );
 
-        // distance along the ray between grid planes, per axis
         let delta = Vec3::new(
-            if direction.x == 0.0 { f32::INFINITY } else { (1.0 / direction.x).abs() },
-            if direction.y == 0.0 { f32::INFINITY } else { (1.0 / direction.y).abs() },
-            if direction.z == 0.0 { f32::INFINITY } else { (1.0 / direction.z).abs() },
+            if direction.x == 0.0 {
+                f32::INFINITY
+            } else {
+                (1.0 / direction.x).abs()
+            },
+            if direction.y == 0.0 {
+                f32::INFINITY
+            } else {
+                (1.0 / direction.y).abs()
+            },
+            if direction.z == 0.0 {
+                f32::INFINITY
+            } else {
+                (1.0 / direction.z).abs()
+            },
         );
 
         let boundary = |start: f32, cell: i32, step: i32| -> f32 {
@@ -532,9 +515,21 @@ impl World {
             }
         };
         let mut next = Vec3::new(
-            if delta.x.is_finite() { boundary(origin.x, cell.x, step.x) * delta.x } else { f32::INFINITY },
-            if delta.y.is_finite() { boundary(origin.y, cell.y, step.y) * delta.y } else { f32::INFINITY },
-            if delta.z.is_finite() { boundary(origin.z, cell.z, step.z) * delta.z } else { f32::INFINITY },
+            if delta.x.is_finite() {
+                boundary(origin.x, cell.x, step.x) * delta.x
+            } else {
+                f32::INFINITY
+            },
+            if delta.y.is_finite() {
+                boundary(origin.y, cell.y, step.y) * delta.y
+            } else {
+                f32::INFINITY
+            },
+            if delta.z.is_finite() {
+                boundary(origin.z, cell.z, step.z) * delta.z
+            } else {
+                f32::INFINITY
+            },
         );
 
         if self.is_solid(cell) {
@@ -584,8 +579,7 @@ impl World {
         Some((cell, block))
     }
 
-    /// Places against the face the ray enters. Refuses cells overlapping the
-    /// player box, otherwise you can seal yourself inside a block.
+    /// Places against the hit face unless the new block overlaps the player.
     pub fn place_block(
         &mut self,
         origin: Vec3,
@@ -642,19 +636,14 @@ impl World {
                 for y in 0..chunk.max_height {
                     for hz in z_start..=z_end {
                         for hx in x_start..=x_end {
-                            let local = IVec3::new(
-                                hx.rem_euclid(CHUNK_SIZE),
-                                y,
-                                hz.rem_euclid(CHUNK_SIZE),
-                            );
+                            let local =
+                                IVec3::new(hx.rem_euclid(CHUNK_SIZE), y, hz.rem_euclid(CHUNK_SIZE));
                             let index = Halo::index(hx, y, hz);
                             halo.blocks[index] = chunk.get(local);
                             halo.skylight[index] = chunk.light(local);
                         }
                     }
                 }
-                // above max_height it's all open sky, which is what the buffer
-                // was filled with, so there is nothing left to write
             }
         }
 
@@ -707,8 +696,6 @@ impl World {
                             );
                         }
 
-                        // rotating flips the triangulation diagonal, without it
-                        // you get the classic AO staircase on corners
                         let rotate = ao[0] + ao[2] > ao[1] + ao[3];
                         for offset in 0..4 {
                             let index = if rotate { (offset + 1) % 4 } else { offset };
@@ -745,8 +732,6 @@ impl World {
             let v_len = axis_extent(v_axis, halo.height);
 
             let mut mask = vec![MaskCell::Empty; (u_len * v_len) as usize];
-            // reused across slices, reallocating per slice cost more than the
-            // merging saved
             let mut gradients: Vec<(u32, [(u32, u32); 4])> = Vec::new();
 
             for slice in 0..axis_len {
@@ -785,7 +770,6 @@ impl World {
                     }
                 }
 
-                // sweep the mask, grow each rect right then down
                 let mut v = 0;
                 while v < v_len {
                     let mut u = 0;
@@ -861,8 +845,6 @@ impl World {
     }
 }
 
-/// Stretched by width/height along the face tangents. Corner order from `FACES`
-/// is kept so the winding stays right for back-face culling.
 #[allow(clippy::too_many_arguments)]
 fn emit_quad(
     vertices: &mut Vec<u32>,
@@ -881,7 +863,6 @@ fn emit_quad(
         let mut position = origin;
         position[u_axis] += corner[u_axis] * width;
         position[v_axis] += corner[v_axis] * height;
-        // never stretch along the face normal
         let axis = axis_of(face.neighbor);
         position[axis] = origin[axis] + corner[axis];
 
@@ -903,12 +884,7 @@ fn emit_quad(
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MaskCell {
     Empty,
-    Mergeable {
-        material: u32,
-        ao: u32,
-        light: u32,
-    },
-    /// has a gradient across its corners, gets emitted on its own
+    Mergeable { material: u32, ao: u32, light: u32 },
     Unique(usize),
 }
 
@@ -975,8 +951,6 @@ fn corner_lighting(halo: &Halo, block: IVec3, face: &Face, corner: [i32; 3]) -> 
         3 - (solid_u as u32 + solid_v as u32 + solid_diagonal as u32)
     };
 
-    // only open blocks contribute, a solid neighbor drags the average to zero
-    // and darkens every edge
     let mut total = 0_u32;
     let mut samples = 0_u32;
     for position in [front, side_u, side_v, diagonal] {
@@ -1027,12 +1001,8 @@ fn terrain_height(noise: &PerlinNoise, world_x: i32, world_z: i32) -> i32 {
     let z = world_z as f32;
 
     let broad = noise.octave_sample(x * 0.018, z * 0.018, 4);
-    // keep the detail octave low and smooth, higher frequencies scatter
-    // one-block steps everywhere and it stops looking like ground
     let detail = noise.octave_sample(x * 0.045 + 20.0, z * 0.045, 2);
 
-    // low frequency mask so mountains stay local, most of the map is rolling
-    // hills and only a few regions lift into ridges
     let mask = noise.sample(x * 0.0055 + 100.0, z * 0.0055 - 40.0);
     let mountain = ((mask - 0.08).max(0.0) / 0.92).powf(1.4);
     let ridge = noise.ridge_sample(x * 0.021 - 60.0, z * 0.021 + 15.0, 3);
@@ -1078,7 +1048,6 @@ fn tree_at(seed: u32, noise: &PerlinNoise, world_x: i32, world_z: i32) -> Option
     }
 
     let hash = hash_2d(seed, world_x, world_z);
-    // roughly 3 columns in a hundred, reads as a sparse forest
     if hash % 100 >= 3 {
         return None;
     }
@@ -1152,9 +1121,8 @@ const FACES: [Face; 6] = [
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Block, ChunkPosition, World, CHUNK_SIZE, RENDER_DISTANCE, WORLD_HEIGHT,
-    };
+    use super::{Block, ChunkPosition, World, CHUNK_SIZE, RENDER_DISTANCE, WORLD_HEIGHT};
+    use crate::protocol::MAX_BLOCK_ID;
     use glam::{IVec3, Vec3};
 
     #[test]
@@ -1238,6 +1206,7 @@ mod tests {
         }
         assert_eq!(Block::from_u8(Block::ALL.len() as u8), None);
         assert_eq!(Block::from_u8(u8::MAX), None);
+        assert_eq!(Block::ALL.len() - 1, MAX_BLOCK_ID as usize);
     }
 
     /// Pins `MAX_QUADS_PER_CHUNK` to the densest mesh a chunk can produce, so the
@@ -1415,11 +1384,7 @@ mod tests {
                 world.set(IVec3::new(x, y, 5), Block::Stone);
             }
         }
-        let hit = world.raycast(
-            Vec3::new(2.1, 24.1, 2.0),
-            Vec3::new(0.35, 0.12, 1.0),
-            12.0,
-        );
+        let hit = world.raycast(Vec3::new(2.1, 24.1, 2.0), Vec3::new(0.35, 0.12, 1.0), 12.0);
         assert!(hit.is_some(), "DDA must not step over the wall");
         assert_eq!(hit.unwrap().0.z, 5);
     }
@@ -1476,13 +1441,18 @@ mod tests {
     #[test]
     fn skylight_is_dark_under_solid_ground() {
         let world = World::generate(17);
-        let surface = world.highest_block(3, 3).expect("column should have ground");
+        let surface = world
+            .highest_block(3, 3)
+            .expect("column should have ground");
         let chunk = world
             .chunks
             .get(&ChunkPosition { x: 0, z: 0 })
             .expect("origin chunk is loaded");
         assert_eq!(chunk.light(IVec3::new(3, surface, 3)), 0);
-        assert_eq!(chunk.light(IVec3::new(3, surface + 1, 3)), super::MAX_SKYLIGHT);
+        assert_eq!(
+            chunk.light(IVec3::new(3, surface + 1, 3)),
+            super::MAX_SKYLIGHT
+        );
     }
 
     #[test]
@@ -1497,7 +1467,10 @@ mod tests {
 
         world.set(position, Block::Air);
         let chunk = world.chunks.get(&ChunkPosition { x: 0, z: 0 }).unwrap();
-        assert!(chunk.max_height < 41, "removing the top block must lower max_height");
+        assert!(
+            chunk.max_height < 41,
+            "removing the top block must lower max_height"
+        );
     }
 
     #[test]
@@ -1521,7 +1494,10 @@ mod tests {
             highest >= 30,
             "expected mountains somewhere, highest was {highest}"
         );
-        assert!(highest < WORLD_HEIGHT, "terrain must stay under the ceiling");
+        assert!(
+            highest < WORLD_HEIGHT,
+            "terrain must stay under the ceiling"
+        );
     }
 
     /// Surface a mesh covers in unit block faces. Greedy merging must not change
@@ -1576,37 +1552,35 @@ mod tests {
         }
     }
 
-    // cargo test --release -- --ignored --nocapture
+    // Run with `cargo test --release -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn mesh_benchmark() {
-        // without this it times the 8 chunks one call generates, with halos full
-        // of holes, and reports numbers the running game never sees
         let mut world = World::generate(1_337);
         settle(&mut world, Vec3::ZERO);
         let positions: Vec<_> = world.loaded_positions().into_iter().collect();
 
         let start = std::time::Instant::now();
         let mut quads = 0;
-        let mut words = 0;
+        let mut vertex_words = 0;
         for &position in &positions {
             let mesh = world.build_chunk_mesh(position);
             quads += mesh.quad_count;
-            words += mesh.vertices.len();
+            vertex_words += mesh.vertices.len();
         }
-        let full = start.elapsed();
+        let plain_all = start.elapsed();
 
         let single = std::time::Instant::now();
         let _ = world.build_chunk_mesh(positions[0]);
-        let single = single.elapsed();
+        let plain_one = single.elapsed();
 
         println!(
             "BENCH plain   chunks={} quads={} vertex_bytes={:.2}MB all={:?} one={:?}",
             positions.len(),
             quads,
-            (words * 4) as f64 / 1_048_576.0,
-            full,
-            single
+            (vertex_words * 4) as f64 / 1_048_576.0,
+            plain_all,
+            plain_one
         );
 
         let start = std::time::Instant::now();
@@ -1617,45 +1591,42 @@ mod tests {
             greedy_quads += mesh.quad_count;
             greedy_words += mesh.vertices.len();
         }
-        let greedy_full = start.elapsed();
+        let greedy_all = start.elapsed();
 
         let single = std::time::Instant::now();
         let _ = world.build_chunk_mesh_greedy(positions[0]);
-        let greedy_single = single.elapsed();
+        let greedy_one = single.elapsed();
 
         println!(
             "BENCH greedy  chunks={} quads={} vertex_bytes={:.2}MB all={:?} one={:?}",
             positions.len(),
             greedy_quads,
             (greedy_words * 4) as f64 / 1_048_576.0,
-            greedy_full,
-            greedy_single
+            greedy_all,
+            greedy_one
         );
         println!(
             "BENCH verdict quads {:.1}% of plain, meshing {:.1}% of plain",
             greedy_quads as f64 / quads as f64 * 100.0,
-            greedy_full.as_secs_f64() / full.as_secs_f64() * 100.0
+            greedy_all.as_secs_f64() / plain_all.as_secs_f64() * 100.0
         );
     }
-}
 
-
-#[cfg(test)]
-mod generation_cost {
-    use super::*;
     #[test]
     #[ignore]
-    fn measure() {
+    fn generation_benchmark() {
         let start = std::time::Instant::now();
         let world = World::generate(1_337);
-        let full = start.elapsed();
-        let n = world.loaded_chunk_count();
+        let initial_load = start.elapsed();
+        let chunk_count = world.loaded_chunk_count();
 
-        let mut w2 = World::generate(1_337);
+        let mut shifted_world = World::generate(1_337);
         let start = std::time::Instant::now();
-        w2.load_chunks_around(Vec3::new(CHUNK_SIZE as f32, 0.0, 0.0));
-        let step = start.elapsed();
-        println!("GEN {n} chunks in {full:?} ({:?}/chunk), crossing a border: {step:?}",
-            full / n as u32);
+        shifted_world.load_chunks_around(Vec3::new(CHUNK_SIZE as f32, 0.0, 0.0));
+        let border_crossing = start.elapsed();
+        println!(
+            "GEN {chunk_count} chunks in {initial_load:?} ({:?}/chunk), crossing a border: {border_crossing:?}",
+            initial_load / chunk_count as u32
+        );
     }
 }

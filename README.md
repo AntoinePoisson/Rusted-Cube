@@ -31,7 +31,7 @@ Needs Rust, the wasm32 target, wasm-pack and any static file server.
 ```sh
 rustup target add wasm32-unknown-unknown
 wasm-pack build --target web --release
-python3 -m http.server 8080
+python3 -m http.server 8080 --bind 127.0.0.1
 ```
 
 Open http://localhost:8080 and click to grab the cursor.
@@ -59,9 +59,8 @@ cd server && cargo run --release      # optional seed: -- 42
 It prints the address to share. No dependencies, everything on std, one thread
 per connection. Port 8118 because 8080 is always taken already.
 
-Address discovery shells out to `ipconfig getifaddr en0`, so it only prints a
-shareable address on macOS. Elsewhere the server still runs, you just have to
-find your LAN IP yourself.
+The server prints the local address it can detect. If the machine has no default
+network route, use its LAN IP directly.
 
 The server owns the seed and the edit list, clients generate the terrain locally
 from that seed, so only poses and edits travel. Behind a static host no socket
@@ -75,7 +74,7 @@ since the world is shared.
 | Move | WASD or arrows |
 | Look | mouse |
 | Jump | space |
-| Sprint | left shift |
+| Sprint | shift |
 | Break | left click |
 | Place | right click |
 | New world | R, offline only |

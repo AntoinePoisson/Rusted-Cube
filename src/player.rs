@@ -7,14 +7,11 @@ use crate::{
 
 const PLAYER_RADIUS: f32 = 0.3;
 const PLAYER_HEIGHT: f32 = 1.8;
-/// Higher than the usual 1.62 so the world feels bigger. Yes, this is above
-/// PLAYER_HEIGHT, on purpose: the collision box stays as is so movement doesn't
-/// change, `eye_position` deals with the rest.
+// Kept above the collision box on purpose; `eye_position` handles low ceilings.
 const EYE_HEIGHT: f32 = 2.0;
 const MIN_EYE_HEIGHT: f32 = 1.4;
 const GRAVITY: f32 = 24.0;
 const JUMP_SPEED: f32 = 8.5;
-/// Falling past this means the ground was dug out from under the player.
 const VOID_LEVEL: f32 = -10.0;
 
 pub struct Player {
@@ -58,7 +55,7 @@ impl Player {
             movement -= right;
         }
 
-        let speed = if input.is_pressed("ShiftLeft") {
+        let speed = if input.is_pressed("ShiftLeft") || input.is_pressed("ShiftRight") {
             7.5
         } else {
             4.8
@@ -82,22 +79,15 @@ impl Player {
         }
     }
 
-    /// Back on top of the column fallen through, not at some fixed point: a
-    /// hardcoded spot drops the player into terrain, or into a chunk that isn't
-    /// even loaded, wherever they happened to be.
     fn respawn_above_ground(&mut self, world: &World) {
         let x = self.position.x.floor() as i32;
         let z = self.position.z.floor() as i32;
-        // no ground means the column isn't loaded, come back in from the ceiling
-        // and let gravity sort it out once it is
         let ground = world.highest_block(x, z).unwrap_or(WORLD_HEIGHT - 1);
         self.position = Vec3::new(x as f32 + 0.5, ground as f32 + 1.01, z as f32 + 0.5);
         self.velocity = Vec3::ZERO;
     }
 
-    /// Ducks when the raised camera would end up inside a block. The eyes sit
-    /// above the collision box, so the body fits under a two-block ceiling and
-    /// the camera doesn't, and the screen just fills with solid color.
+    /// Lowers the camera when the normal eye position is inside a block.
     pub fn eye_position(&self, world: &World) -> Vec3 {
         let mut height = EYE_HEIGHT;
         while height > MIN_EYE_HEIGHT {
@@ -190,7 +180,6 @@ mod tests {
     #[test]
     fn eye_sits_at_full_height_when_nothing_is_above() {
         let mut world = World::generate(41);
-        // clear a tall column so the camera has room
         for y in 25..32 {
             world.set(IVec3::new(4, y, 4), Block::Air);
         }
@@ -204,14 +193,15 @@ mod tests {
     #[test]
     fn falling_out_of_the_world_puts_the_player_back_on_their_own_column() {
         let world = World::generate(43);
-        // somewhere well away from spawn, under the world
         let column = Vec3::new(9.5, VOID_LEVEL - 5.0, 6.5);
         let mut player = Player::new(column);
         player.set_position(column);
 
         player.update(&mut Input::default(), &world, 0.016);
 
-        let ground = world.highest_block(9, 6).expect("column should have ground");
+        let ground = world
+            .highest_block(9, 6)
+            .expect("column should have ground");
         assert_eq!(player.position.x, 9.5, "must stay on the same column");
         assert_eq!(player.position.z, 6.5, "must stay on the same column");
         assert!(

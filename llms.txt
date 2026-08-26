@@ -4,7 +4,7 @@
 > physics, collision, block raycasting and mesh building are written in Rust and
 > compiled to WebAssembly. Rendering talks to WebGL2 directly, no 3D engine.
 
-Click to grab the cursor. WASD to move, space to jump, left shift to sprint,
+Click to grab the cursor. WASD to move, space to jump, shift to sprint,
 left click to break, right click to place what you're holding, R for a new
 world. The block you're aiming at is outlined.
 
