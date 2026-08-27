@@ -1,0 +1,20 @@
+{
+  "name": "Rusted Cube",
+  "short_name": "Rusted Cube",
+  "description": "An endless voxel sandbox generated in Rust and rendered with WebAssembly and WebGL2.",
+  "id": "/Rusted-Cube/",
+  "start_url": "/Rusted-Cube/",
+  "scope": "/Rusted-Cube/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#111713",
+  "theme_color": "#92b4be",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

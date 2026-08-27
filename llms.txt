@@ -8,6 +8,9 @@ Click to grab the cursor. WASD to move, space to jump, shift to sprint,
 left click to break, right click to place what you're holding, R for a new
 world. The block you're aiming at is outlined.
 
+On a touchscreen, use the left directional pad to move, drag the right side to
+look around, and use the action buttons to jump, break and place.
+
 Things worth knowing:
 
 - The world is a 7x7 window of 16x48x16 chunks following the player. Chunks
@@ -17,7 +20,7 @@ Things worth knowing:
 - Day/night cycle drives the sun and sky color, but there is no shadow mapping.
 - LAN multiplayer needs the bundled server in server/, which has no
   dependencies. The GitHub Pages build is static, so single player only.
-- It renders on a phone but isn't playable there, no touch controls.
+- Touch controls and a lower mobile render scale keep the game playable on phones.
 - Builds on Rust 1.67. CI pins 1.76 because 1.82 changed the wasm ABI.
 
 ## Source

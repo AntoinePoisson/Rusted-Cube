@@ -80,6 +80,9 @@ since the world is shared.
 | New world | R, offline only |
 | Free the cursor | escape |
 
+On a touchscreen, use the directional pad to move, drag the right side of the
+screen to look around, and use the action buttons to jump, break and place.
+
 ## Layout
 
 ```text
@@ -137,7 +140,6 @@ exactly that and checks the bound is tight.
 
 ## Not done
 
-- Touch controls, so a phone renders the world but can't play it
 - Cast shadows
 - Transparent blocks, would need depth sorting
 

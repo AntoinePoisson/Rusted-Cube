@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://antoinepoisson.github.io/Rusted-Cube/sitemap.xml

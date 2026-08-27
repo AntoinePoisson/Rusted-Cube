@@ -7,7 +7,8 @@ use std::{
 use glam::{IVec3, Vec3};
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::{
-    Document, HtmlCanvasElement, HtmlElement, KeyboardEvent, MouseEvent, Performance, Window,
+    Document, Event, HtmlCanvasElement, HtmlElement, KeyboardEvent, MouseEvent, Performance,
+    PointerEvent, VisibilityState, Window,
 };
 
 use crate::{
@@ -130,6 +131,8 @@ struct Game {
     loader: Option<HtmlElement>,
     loader_hidden: bool,
     performance: Performance,
+    playing: bool,
+    visible: bool,
 }
 
 impl Game {
@@ -176,12 +179,22 @@ impl Game {
             loader,
             loader_hidden: false,
             performance,
+            playing: false,
+            visible: true,
         };
         game.process_pending_meshes();
         Ok(game)
     }
 
     fn frame(&mut self, now: f64) {
+        if !self.visible {
+            self.last_frame = now;
+            return;
+        }
+        if !self.playing && now - self.last_frame < 1_000.0 / 30.0 {
+            return;
+        }
+
         let delta = ((now - self.last_frame) as f32 / 1_000.0).clamp(0.0, 0.05);
         self.last_frame = now;
 
@@ -225,6 +238,18 @@ impl Game {
         }
 
         self.update_hud(now, delta);
+    }
+
+    fn set_playing(&mut self, playing: bool) {
+        self.playing = playing;
+        self.input.clear();
+        self.last_frame = self.performance.now();
+    }
+
+    fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+        self.input.clear();
+        self.last_frame = self.performance.now();
     }
 
     fn is_online(&self) -> bool {
@@ -486,10 +511,35 @@ pub fn start() -> Result<(), JsValue> {
         performance,
     )?));
 
+    register_start_ui(&document, &canvas, Rc::clone(&game))?;
     register_keyboard(&window, Rc::clone(&game))?;
     register_mouse(&document, &canvas, Rc::clone(&game))?;
-    register_pointer_lock_ui(&document)?;
+    register_touch_controls(&document, Rc::clone(&game))?;
+    register_pointer_lock_ui(&document, Rc::clone(&game))?;
+    register_visibility(&document, Rc::clone(&game))?;
     start_animation_loop(&window, game)?;
+    Ok(())
+}
+
+fn register_start_ui(
+    document: &Document,
+    canvas: &HtmlCanvasElement,
+    game: Rc<RefCell<Game>>,
+) -> Result<(), JsValue> {
+    let button = element::<HtmlElement>(document, "play-button")?;
+    let start_document = document.clone();
+    let start_canvas = canvas.clone();
+    let callback = Closure::<dyn FnMut(Event)>::new(move |_| {
+        if uses_touch(&start_document) {
+            apply_playing_ui(&start_document, true);
+            game.borrow_mut().set_playing(true);
+            let _ = start_canvas.focus();
+        } else {
+            start_canvas.request_pointer_lock();
+        }
+    });
+    button.add_event_listener_with_callback("click", callback.as_ref().unchecked_ref())?;
+    callback.forget();
     Ok(())
 }
 
@@ -567,21 +617,213 @@ fn register_mouse(
     Ok(())
 }
 
-fn register_pointer_lock_ui(document: &Document) -> Result<(), JsValue> {
+fn register_pointer_lock_ui(document: &Document, game: Rc<RefCell<Game>>) -> Result<(), JsValue> {
     let pointer_document = document.clone();
     let callback = Closure::<dyn FnMut()>::new(move || {
-        if let Some(body) = pointer_document.body() {
-            body.set_class_name(if pointer_document.pointer_lock_element().is_some() {
-                "playing"
-            } else {
-                ""
-            });
-        }
+        let playing = pointer_document.pointer_lock_element().is_some();
+        apply_playing_ui(&pointer_document, playing);
+        game.borrow_mut().set_playing(playing);
     });
     document
         .add_event_listener_with_callback("pointerlockchange", callback.as_ref().unchecked_ref())?;
     callback.forget();
+
+    let note = element::<HtmlElement>(document, "device-note")?;
+    let error = Closure::<dyn FnMut(Event)>::new(move |_| {
+        note.set_inner_text("Cursor capture failed — check browser permissions");
+        note.set_class_name("intro__device intro__device--error");
+    });
+    document
+        .add_event_listener_with_callback("pointerlockerror", error.as_ref().unchecked_ref())?;
+    error.forget();
     Ok(())
+}
+
+fn register_visibility(document: &Document, game: Rc<RefCell<Game>>) -> Result<(), JsValue> {
+    let visibility_document = document.clone();
+    let callback = Closure::<dyn FnMut(Event)>::new(move |_| {
+        let visible = visibility_document.visibility_state() != VisibilityState::Hidden;
+        game.borrow_mut().set_visible(visible);
+    });
+    document
+        .add_event_listener_with_callback("visibilitychange", callback.as_ref().unchecked_ref())?;
+    callback.forget();
+    Ok(())
+}
+
+fn register_touch_controls(document: &Document, game: Rc<RefCell<Game>>) -> Result<(), JsValue> {
+    register_touch_key(document, "touch-forward", "KeyW", Rc::clone(&game))?;
+    register_touch_key(document, "touch-left", "KeyA", Rc::clone(&game))?;
+    register_touch_key(document, "touch-back", "KeyS", Rc::clone(&game))?;
+    register_touch_key(document, "touch-right", "KeyD", Rc::clone(&game))?;
+    register_touch_key(document, "touch-jump", "Space", Rc::clone(&game))?;
+    register_touch_action(
+        document,
+        "touch-break",
+        Input::request_break,
+        Rc::clone(&game),
+    )?;
+    register_touch_action(
+        document,
+        "touch-place",
+        Input::request_place,
+        Rc::clone(&game),
+    )?;
+    register_touch_look(document, Rc::clone(&game))?;
+
+    let pause = element::<HtmlElement>(document, "touch-pause")?;
+    let pause_document = document.clone();
+    let pause_game = Rc::clone(&game);
+    let callback = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
+        event.prevent_default();
+        apply_playing_ui(&pause_document, false);
+        pause_game.borrow_mut().set_playing(false);
+        if let Ok(play) = element::<HtmlElement>(&pause_document, "play-button") {
+            let _ = play.focus();
+        }
+    });
+    pause.add_event_listener_with_callback("click", callback.as_ref().unchecked_ref())?;
+    callback.forget();
+    Ok(())
+}
+
+fn register_touch_key(
+    document: &Document,
+    id: &str,
+    code: &'static str,
+    game: Rc<RefCell<Game>>,
+) -> Result<(), JsValue> {
+    let control = element::<HtmlElement>(document, id)?;
+    let down_control = control.clone();
+    let down_game = Rc::clone(&game);
+    let down = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        event.prevent_default();
+        let _ = down_control.set_pointer_capture(event.pointer_id());
+        down_control.set_class_name("is-pressed");
+        down_game.borrow_mut().input.set_key(code.to_owned(), true);
+    });
+    control.add_event_listener_with_callback("pointerdown", down.as_ref().unchecked_ref())?;
+    down.forget();
+
+    let up_control = control.clone();
+    let up = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        event.prevent_default();
+        up_control.set_class_name("");
+        game.borrow_mut().input.set_key(code.to_owned(), false);
+    });
+    control.add_event_listener_with_callback("pointerup", up.as_ref().unchecked_ref())?;
+    control.add_event_listener_with_callback("pointercancel", up.as_ref().unchecked_ref())?;
+    up.forget();
+    Ok(())
+}
+
+fn register_touch_action(
+    document: &Document,
+    id: &str,
+    action: fn(&mut Input),
+    game: Rc<RefCell<Game>>,
+) -> Result<(), JsValue> {
+    let control = element::<HtmlElement>(document, id)?;
+    let down_control = control.clone();
+    let down = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        event.prevent_default();
+        let _ = down_control.set_pointer_capture(event.pointer_id());
+        down_control.set_class_name("is-pressed");
+        action(&mut game.borrow_mut().input);
+    });
+    control.add_event_listener_with_callback("pointerdown", down.as_ref().unchecked_ref())?;
+    down.forget();
+
+    let up_control = control.clone();
+    let up = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        event.prevent_default();
+        up_control.set_class_name("");
+    });
+    control.add_event_listener_with_callback("pointerup", up.as_ref().unchecked_ref())?;
+    control.add_event_listener_with_callback("pointercancel", up.as_ref().unchecked_ref())?;
+    up.forget();
+    Ok(())
+}
+
+fn register_touch_look(document: &Document, game: Rc<RefCell<Game>>) -> Result<(), JsValue> {
+    let area = element::<HtmlElement>(document, "touch-look")?;
+    let pointer = Rc::new(RefCell::new(None::<(i32, i32, i32)>));
+
+    let down_area = area.clone();
+    let down_pointer = Rc::clone(&pointer);
+    let down = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        event.prevent_default();
+        let _ = down_area.set_pointer_capture(event.pointer_id());
+        *down_pointer.borrow_mut() = Some((event.pointer_id(), event.client_x(), event.client_y()));
+    });
+    area.add_event_listener_with_callback("pointerdown", down.as_ref().unchecked_ref())?;
+    down.forget();
+
+    let move_pointer = Rc::clone(&pointer);
+    let move_game = Rc::clone(&game);
+    let movement = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        event.prevent_default();
+        let previous = *move_pointer.borrow();
+        let Some((pointer_id, x, y)) = previous else {
+            return;
+        };
+        if pointer_id != event.pointer_id() {
+            return;
+        }
+        let dx = event.client_x() - x;
+        let dy = event.client_y() - y;
+        *move_pointer.borrow_mut() = Some((pointer_id, event.client_x(), event.client_y()));
+        move_game
+            .borrow_mut()
+            .input
+            .add_mouse_motion(dx as f32 * 0.85, dy as f32 * 0.85);
+    });
+    area.add_event_listener_with_callback("pointermove", movement.as_ref().unchecked_ref())?;
+    movement.forget();
+
+    let up = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        event.prevent_default();
+        if pointer
+            .borrow()
+            .map(|(pointer_id, _, _)| pointer_id == event.pointer_id())
+            .unwrap_or(false)
+        {
+            pointer.borrow_mut().take();
+        }
+    });
+    area.add_event_listener_with_callback("pointerup", up.as_ref().unchecked_ref())?;
+    area.add_event_listener_with_callback("pointercancel", up.as_ref().unchecked_ref())?;
+    up.forget();
+    Ok(())
+}
+
+fn uses_touch(document: &Document) -> bool {
+    document
+        .document_element()
+        .and_then(|root| root.get_attribute("data-input"))
+        .as_deref()
+        == Some("touch")
+}
+
+fn apply_playing_ui(document: &Document, playing: bool) {
+    if let Some(body) = document.body() {
+        body.set_class_name(if playing { "playing" } else { "" });
+    }
+    if let Some(intro) = document
+        .get_element_by_id("game-instructions")
+        .and_then(|element| element.parent_element())
+    {
+        if playing {
+            let _ = intro.set_attribute("aria-hidden", "true");
+        } else {
+            let _ = intro.remove_attribute("aria-hidden");
+        }
+    }
+    if uses_touch(document) {
+        if let Some(controls) = document.get_element_by_id("touch-controls") {
+            let _ = controls.set_attribute("aria-hidden", if playing { "false" } else { "true" });
+        }
+    }
 }
 
 fn start_animation_loop(window: &Window, game: Rc<RefCell<Game>>) -> Result<(), JsValue> {

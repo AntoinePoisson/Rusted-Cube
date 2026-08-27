@@ -4,13 +4,42 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
     <meta
       name="description"
-      content="Rusted Cube is a small voxel sandbox powered by Rust, WebAssembly and WebGL2."
+      content="Explore an endless voxel world generated in Rust and rendered with WebAssembly and WebGL2 — directly in your browser."
     />
     <meta name="theme-color" content="#92b4be" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Rusted Cube" />
+    <meta property="og:title" content="Rusted Cube — Rust voxel sandbox" />
+    <meta
+      property="og:description"
+      content="Explore an endless voxel world generated in Rust and rendered with WebAssembly and WebGL2."
+    />
+    <meta property="og:url" content="https://antoinepoisson.github.io/Rusted-Cube/" />
+    <meta
+      property="og:image"
+      content="https://antoinepoisson.github.io/Rusted-Cube/social-preview.png"
+    />
+    <meta property="og:image:width" content="1600" />
+    <meta property="og:image:height" content="813" />
+    <meta property="og:image:alt" content="Rusted Cube voxel landscape and title screen" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Rusted Cube — Rust voxel sandbox" />
+    <meta
+      name="twitter:description"
+      content="An endless voxel world generated in Rust and rendered with WebAssembly and WebGL2."
+    />
+    <meta
+      name="twitter:image"
+      content="https://antoinepoisson.github.io/Rusted-Cube/social-preview.png"
+    />
     <title>Rusted Cube - Rust voxel sandbox</title>
+    <link rel="canonical" href="https://antoinepoisson.github.io/Rusted-Cube/" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./site.webmanifest" />
     <link rel="stylesheet" href="./styles.css" />
     <link rel="modulepreload" href="./pkg/rusted_cube.js" />
     <link
@@ -20,10 +49,36 @@
       type="application/wasm"
       crossorigin="anonymous"
     />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "Rusted Cube",
+        "description": "An endless voxel sandbox generated in Rust and rendered with WebAssembly and WebGL2.",
+        "url": "https://antoinepoisson.github.io/Rusted-Cube/",
+        "image": "https://antoinepoisson.github.io/Rusted-Cube/social-preview.png",
+        "applicationCategory": "Game",
+        "operatingSystem": "Any modern desktop or mobile browser",
+        "playMode": "SinglePlayer",
+        "isAccessibleForFree": true,
+        "codeRepository": "https://github.com/AntoinePoisson/Rusted-Cube",
+        "license": "https://opensource.org/licenses/MIT",
+        "author": {
+          "@type": "Person",
+          "name": "Antoine Poisson",
+          "url": "https://github.com/AntoinePoisson"
+        }
+      }
+    </script>
   </head>
   <body>
     <main class="game-shell">
-      <canvas id="game-canvas" aria-label="Rusted Cube game world" tabindex="0"></canvas>
+      <canvas
+        id="game-canvas"
+        aria-label="Rusted Cube game world"
+        aria-describedby="game-instructions device-note"
+        tabindex="0"
+      ></canvas>
 
       <div class="shade" aria-hidden="true"></div>
       <div class="crosshair" aria-hidden="true"></div>
@@ -37,10 +92,10 @@
           <span class="title__line">Rusted</span>
           <span class="title__line">Cube</span>
         </h1>
-        <p class="intro__copy">
+        <p id="game-instructions" class="intro__copy">
           An endless chunked world generated and simulated in Rust. Click anywhere to explore.
         </p>
-        <dl class="controls">
+        <dl class="controls controls--keyboard">
           <div><dt>Move</dt><dd>W A S D</dd></div>
           <div><dt>Look</dt><dd>Mouse</dd></div>
           <div><dt>Jump</dt><dd>Space</dd></div>
@@ -49,7 +104,30 @@
           <div><dt>Sprint</dt><dd>Shift</dd></div>
           <div><dt>New world</dt><dd>R</dd></div>
         </dl>
-        <p class="intro__hint">Click to capture the cursor</p>
+        <dl class="controls controls--touch">
+          <div><dt>Move</dt><dd>Left pad</dd></div>
+          <div><dt>Look</dt><dd>Drag right</dd></div>
+          <div><dt>Actions</dt><dd>On-screen buttons</dd></div>
+        </dl>
+        <div class="intro__actions">
+          <button id="play-button" class="play-button" type="button">
+            <span class="play-button__pointer">Capture cursor</span>
+            <span class="play-button__touch">Explore world</span>
+          </button>
+          <a
+            class="source-link"
+            href="https://github.com/AntoinePoisson/Rusted-Cube"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Source code
+            <span aria-hidden="true">&#8599;</span>
+          </a>
+        </div>
+        <p id="device-note" class="intro__device">
+          <span class="device-note__pointer">WASD or arrow keys · mouse to look</span>
+          <span class="device-note__touch">Touch controls enabled</span>
+        </p>
       </section>
 
       <div class="hud" aria-hidden="true">
@@ -65,10 +143,33 @@
         <span>ESC TO RELEASE</span>
       </div>
 
-      <div id="loader" class="loader" role="status">
+      <div id="loader" class="loader" role="status" aria-live="polite" aria-atomic="true">
         <span class="loader__cube"></span>
         <span>Generating terrain</span>
       </div>
+
+      <section
+        id="touch-controls"
+        class="touch-controls"
+        aria-label="Touch game controls"
+        aria-hidden="true"
+      >
+        <div id="touch-look" class="touch-look" aria-label="Drag to look around">
+          <span>Drag to look</span>
+        </div>
+        <div class="touch-move" role="group" aria-label="Movement controls">
+          <button id="touch-forward" type="button" aria-label="Move forward">&#9650;</button>
+          <button id="touch-left" type="button" aria-label="Move left">&#9664;</button>
+          <button id="touch-back" type="button" aria-label="Move backward">&#9660;</button>
+          <button id="touch-right" type="button" aria-label="Move right">&#9654;</button>
+        </div>
+        <div class="touch-actions" role="group" aria-label="Game actions">
+          <button id="touch-jump" type="button">Jump</button>
+          <button id="touch-break" type="button">Break</button>
+          <button id="touch-place" type="button">Place</button>
+        </div>
+        <button id="touch-pause" class="touch-pause" type="button">Pause</button>
+      </section>
     </main>
 
     <noscript>This game needs JavaScript to load its WebAssembly module.</noscript>

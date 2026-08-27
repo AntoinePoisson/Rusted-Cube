@@ -39,6 +39,7 @@ pub struct Renderer {
     entity_model_uniform: WebGlUniformLocation,
     entity_color_uniform: WebGlUniformLocation,
     entity_sun_direction_uniform: WebGlUniformLocation,
+    pixel_ratio_cap: f64,
     view_projection: Mat4,
     drawn_triangles: i32,
     visible_chunks: usize,
@@ -88,6 +89,12 @@ impl Renderer {
         gl.enable(Gl::CULL_FACE);
         gl.cull_face(Gl::BACK);
 
+        let pixel_ratio_cap = web_sys::window()
+            .and_then(|window| window.document())
+            .and_then(|document| document.document_element())
+            .and_then(|root| root.get_attribute("data-input"))
+            .map_or(2.0, |input| if input == "touch" { 1.5 } else { 2.0 });
+
         Ok(Self {
             gl,
             canvas,
@@ -108,6 +115,7 @@ impl Renderer {
             entity_model_uniform,
             entity_color_uniform,
             entity_sun_direction_uniform,
+            pixel_ratio_cap,
             view_projection: Mat4::IDENTITY,
             drawn_triangles: 0,
             visible_chunks: 0,
@@ -219,7 +227,7 @@ impl Renderer {
         let pixel_ratio = web_sys::window()
             .map(|window| window.device_pixel_ratio())
             .unwrap_or(1.0)
-            .min(2.0);
+            .min(self.pixel_ratio_cap);
         let buffer_width = (width as f64 * pixel_ratio) as u32;
         let buffer_height = (height as f64 * pixel_ratio) as u32;
 

@@ -36,6 +36,8 @@ features = [
     "MessageEvent",
     "MouseEvent",
     "Performance",
+    "PointerEvent",
+    "VisibilityState",
     "WebSocket",
     "WebGl2RenderingContext",
     "WebGlBuffer",
