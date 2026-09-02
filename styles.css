@@ -211,6 +211,8 @@ h1 .title__line + .title__line {
   right: 1.25rem;
   bottom: 1.2rem;
   left: 1.25rem;
+  /* Above the hand, which would otherwise cover the release hint. */
+  z-index: 5;
   display: flex;
   justify-content: space-between;
   color: rgba(242, 240, 233, 0.66);
@@ -263,6 +265,7 @@ h1 .title__line + .title__line {
 }
 
 .hand {
+  --hand-depth: clamp(2.6rem, 5vw, 4.2rem);
   position: fixed;
   right: clamp(0.5rem, 3vw, 3rem);
   bottom: clamp(-2rem, -2.5vh, -0.5rem);
@@ -271,22 +274,55 @@ h1 .title__line + .title__line {
   height: clamp(16rem, 38vh, 25rem);
   opacity: 0;
   pointer-events: none;
+  /* Perspective stays local to the hand so nothing else becomes a 3D context. */
+  perspective: clamp(20rem, 40vw, 34rem);
+  perspective-origin: 20% 30%;
   transform: rotate(-24deg) translate3d(0, 8%, 0);
   transform-origin: 70% 100%;
   transition: opacity 160ms ease;
 }
 
+/* Three faces of a box, turned just enough to show the side and the knuckles. */
 .hand__arm {
   position: absolute;
-  right: 10%;
+  right: 8%;
   bottom: 0;
-  width: 62%;
+  width: 60%;
   height: 100%;
-  background:
-    linear-gradient(90deg, transparent 0 78%, rgba(0, 0, 0, 0.22) 78% 100%),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 13%, transparent 13%),
-    linear-gradient(#f2c294 0 40%, #e3ab7d 40% 46%, #2f9b9b 46% 52%, #268a8a 52%
-        100%);
+  transform-style: preserve-3d;
+  transform: rotateX(8deg) rotateY(15deg);
+}
+
+.hand__face {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+.hand__face--front {
+  width: 100%;
+  height: 100%;
+  transform: translateZ(calc(var(--hand-depth) / 2));
+  background: linear-gradient(#f2c294 0 30%, #e3ab7d 30% 35%, #2f9b9b 35% 41%, #268a8a
+        41% 100%);
+}
+
+.hand__face--side {
+  width: var(--hand-depth);
+  height: 100%;
+  transform-origin: left center;
+  transform: rotateY(-90deg) translateX(calc(var(--hand-depth) / -2));
+  background: linear-gradient(#b8936f 0 30%, #ad825f 30% 35%, #247676 35% 41%, #1d6969
+        41% 100%);
+}
+
+.hand__face--top {
+  width: 100%;
+  height: var(--hand-depth);
+  transform-origin: center top;
+  transform: rotateX(90deg) translateY(calc(var(--hand-depth) / -2));
+  background: #fbd3a2;
 }
 
 .playing .intro,

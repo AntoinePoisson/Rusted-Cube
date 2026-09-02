@@ -20,7 +20,6 @@ use crate::{
     world::{Block, ChunkPosition, World},
 };
 
-const DEFAULT_SEED: u32 = 1_337;
 const DAY_LENGTH: f32 = 240.0;
 const REACH: f32 = 6.0;
 const ACTION_COOLDOWN_MS: f64 = 250.0;
@@ -149,18 +148,19 @@ impl Game {
         let mut renderer = Renderer::new(canvas)?;
         renderer.present_sky(&SkyState::at(time_of_day));
 
-        let mut world = World::generate(DEFAULT_SEED);
+        let seed = initial_seed();
+        let mut world = World::generate(seed);
         let player = spawn_player(&world);
         let pending_meshes = world.take_dirty().into_iter().collect();
 
-        hud.seed.set_inner_text(&format!("SEED {DEFAULT_SEED}"));
+        hud.seed.set_inner_text(&format!("SEED {seed}"));
 
         let mut game = Self {
             world,
             player,
             input: Input::default(),
             renderer,
-            seed: DEFAULT_SEED,
+            seed,
             last_frame: now,
             time_of_day,
             pending_meshes,
@@ -392,10 +392,7 @@ impl Game {
     }
 
     fn regenerate(&mut self) {
-        self.seed = self
-            .seed
-            .wrapping_mul(1_664_525)
-            .wrapping_add(1_013_904_223);
+        self.seed = random_seed();
         self.world = World::generate(self.seed);
         self.player = spawn_player(&self.world);
         self.pending_meshes.clear();
@@ -854,6 +851,26 @@ fn apply_edit(world: &mut World, edit: Edit) {
         return;
     };
     world.set(IVec3::from_array(edit.position), block);
+}
+
+/// Honours `?seed=` so a world can be shared, and rolls a random one otherwise.
+fn initial_seed() -> u32 {
+    seed_from_query().unwrap_or_else(random_seed)
+}
+
+fn seed_from_query() -> Option<u32> {
+    let search = web_sys::window()?.location().search().ok()?;
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(key, _)| *key == "seed")
+        .and_then(|(_, value)| value.parse::<u32>().ok())
+}
+
+fn random_seed() -> u32 {
+    // `Math::random` carries 53 bits of mantissa, enough to fill the whole range.
+    (js_sys::Math::random() * f64::from(u32::MAX)) as u32
 }
 
 fn spawn_player(world: &World) -> Player {

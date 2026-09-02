@@ -83,6 +83,9 @@ since the world is shared.
 On a touchscreen, use the directional pad to move, drag the right side of the
 screen to look around, and use the action buttons to jump, break and place.
 
+Offline the seed is drawn at random on every load and shown in the corner
+readout. Append `?seed=1337` to the URL to come back to a world you liked.
+
 ## Layout
 
 ```text

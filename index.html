@@ -83,7 +83,11 @@
       <div class="shade" aria-hidden="true"></div>
       <div class="crosshair" aria-hidden="true"></div>
       <div id="hand" class="hand" aria-hidden="true">
-        <div class="hand__arm"></div>
+        <div class="hand__arm">
+          <i class="hand__face hand__face--front"></i>
+          <i class="hand__face hand__face--side"></i>
+          <i class="hand__face hand__face--top"></i>
+        </div>
       </div>
 
       <section class="intro" aria-label="Game controls">
@@ -132,7 +136,7 @@
 
       <div class="hud" aria-hidden="true">
         <span class="hud__world">
-          <span id="seed">SEED 1337</span>
+          <span id="seed">SEED -</span>
           <span id="chunks">CHUNKS 0/49</span>
           <span id="fps">- FPS</span>
           <span id="mesh">MESH 0.00 MS</span>
