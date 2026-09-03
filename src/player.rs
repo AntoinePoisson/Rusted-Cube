@@ -13,6 +13,10 @@ const MIN_EYE_HEIGHT: f32 = 1.4;
 const GRAVITY: f32 = 24.0;
 const JUMP_SPEED: f32 = 8.5;
 const VOID_LEVEL: f32 = -10.0;
+const MOUSE_SENSITIVITY: f32 = 0.0022;
+/// Radians per second when the on-screen look stick is fully deflected.
+const LOOK_STICK_RATE: f32 = 2.6;
+const PITCH_LIMIT: f32 = 1.5;
 
 pub struct Player {
     pub position: Vec3,
@@ -35,8 +39,10 @@ impl Player {
 
     pub fn update(&mut self, input: &mut Input, world: &World, delta: f32) {
         let (mouse_dx, mouse_dy) = input.take_mouse_motion();
-        self.yaw += mouse_dx * 0.0022;
-        self.pitch = (self.pitch - mouse_dy * 0.0022).clamp(-1.5, 1.5);
+        let (look_x, look_y) = input.look_axis();
+        self.yaw += mouse_dx * MOUSE_SENSITIVITY + look_x * LOOK_STICK_RATE * delta;
+        self.pitch = (self.pitch - mouse_dy * MOUSE_SENSITIVITY - look_y * LOOK_STICK_RATE * delta)
+            .clamp(-PITCH_LIMIT, PITCH_LIMIT);
 
         let forward = Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin());
         let right = Vec3::new(-forward.z, 0.0, forward.x);
@@ -55,12 +61,20 @@ impl Player {
             movement -= right;
         }
 
+        // The keyboard is all-or-nothing, the on-screen stick is analog: normalise the
+        // keyboard part first so a half-pushed stick still walks at half speed.
+        let (move_x, move_y) = input.move_axis();
+        let mut direction = movement.normalize_or_zero() + right * move_x + forward * move_y;
+        if direction.length_squared() > 1.0 {
+            direction = direction.normalize();
+        }
+
         let speed = if input.is_pressed("ShiftLeft") || input.is_pressed("ShiftRight") {
             7.5
         } else {
             4.8
         };
-        let horizontal = movement.normalize_or_zero() * speed;
+        let horizontal = direction * speed;
         self.velocity.x = horizontal.x;
         self.velocity.z = horizontal.z;
 

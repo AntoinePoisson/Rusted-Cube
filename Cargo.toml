@@ -24,7 +24,10 @@ exclude = ["server"]
 version = "=0.3.64"
 features = [
     "console",
+    "CssStyleDeclaration",
     "Document",
+    "DomRect",
+    "DomTokenList",
     "Element",
     "ErrorEvent",
     "Event",

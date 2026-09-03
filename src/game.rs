@@ -27,6 +27,9 @@ const ACTION_COOLDOWN_MS: f64 = 250.0;
 const SWING_MS: f64 = 260.0;
 const MESH_BUDGET_MS: f64 = 4.0;
 const HUD_INTERVAL_MS: f64 = 250.0;
+// Fraction of the ring radius the knob travels, leaving it inside the ring.
+const KNOB_TRAVEL: f64 = 0.62;
+const TOUCH_STICK_IDS: [&str; 2] = ["touch-move", "touch-camera"];
 
 type AnimationCallback = Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>>;
 
@@ -649,10 +652,19 @@ fn register_visibility(document: &Document, game: Rc<RefCell<Game>>) -> Result<(
 }
 
 fn register_touch_controls(document: &Document, game: Rc<RefCell<Game>>) -> Result<(), JsValue> {
-    register_touch_key(document, "touch-forward", "KeyW", Rc::clone(&game))?;
-    register_touch_key(document, "touch-left", "KeyA", Rc::clone(&game))?;
-    register_touch_key(document, "touch-back", "KeyS", Rc::clone(&game))?;
-    register_touch_key(document, "touch-right", "KeyD", Rc::clone(&game))?;
+    // Sticks report screen-space vectors: forward is up, looking down is down.
+    register_touch_stick(
+        document,
+        TOUCH_STICK_IDS[0],
+        |input, x, y| input.set_move_axis(x, -y),
+        Rc::clone(&game),
+    )?;
+    register_touch_stick(
+        document,
+        TOUCH_STICK_IDS[1],
+        |input, x, y| input.set_look_axis(x, y),
+        Rc::clone(&game),
+    )?;
     register_touch_key(document, "touch-jump", "Space", Rc::clone(&game))?;
     register_touch_action(
         document,
@@ -742,6 +754,93 @@ fn register_touch_action(
     Ok(())
 }
 
+/// Wires an analog on-screen stick: the knob follows the finger inside the ring and
+/// `apply` receives the resulting unit-circle vector in screen space (y grows downwards).
+fn register_touch_stick(
+    document: &Document,
+    id: &str,
+    apply: fn(&mut Input, f32, f32),
+    game: Rc<RefCell<Game>>,
+) -> Result<(), JsValue> {
+    let stick = element::<HtmlElement>(document, id)?;
+    let knob = stick
+        .query_selector(".touch-stick__knob")?
+        .and_then(|element| element.dyn_into::<HtmlElement>().ok())
+        .ok_or_else(|| JsValue::from_str(&format!("#{id} has no knob element")))?;
+    let pointer = Rc::new(RefCell::new(None::<i32>));
+
+    let down_stick = stick.clone();
+    let down_knob = knob.clone();
+    let down_pointer = Rc::clone(&pointer);
+    let down_game = Rc::clone(&game);
+    let down = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        event.prevent_default();
+        let _ = down_stick.set_pointer_capture(event.pointer_id());
+        *down_pointer.borrow_mut() = Some(event.pointer_id());
+        let _ = down_stick.class_list().add_1("is-active");
+        drag_stick(&down_stick, &down_knob, &event, apply, &down_game);
+    });
+    stick.add_event_listener_with_callback("pointerdown", down.as_ref().unchecked_ref())?;
+    down.forget();
+
+    let move_stick = stick.clone();
+    let move_knob = knob.clone();
+    let move_pointer = Rc::clone(&pointer);
+    let move_game = Rc::clone(&game);
+    let movement = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        if *move_pointer.borrow() != Some(event.pointer_id()) {
+            return;
+        }
+        event.prevent_default();
+        drag_stick(&move_stick, &move_knob, &event, apply, &move_game);
+    });
+    stick.add_event_listener_with_callback("pointermove", movement.as_ref().unchecked_ref())?;
+    movement.forget();
+
+    let up_stick = stick.clone();
+    let up = Closure::<dyn FnMut(PointerEvent)>::new(move |event: PointerEvent| {
+        if *pointer.borrow() != Some(event.pointer_id()) {
+            return;
+        }
+        event.prevent_default();
+        pointer.borrow_mut().take();
+        let _ = up_stick.class_list().remove_1("is-active");
+        let _ = knob
+            .style()
+            .set_property("transform", "translate3d(0, 0, 0)");
+        apply(&mut game.borrow_mut().input, 0.0, 0.0);
+    });
+    stick.add_event_listener_with_callback("pointerup", up.as_ref().unchecked_ref())?;
+    stick.add_event_listener_with_callback("pointercancel", up.as_ref().unchecked_ref())?;
+    up.forget();
+    Ok(())
+}
+
+fn drag_stick(
+    stick: &HtmlElement,
+    knob: &HtmlElement,
+    event: &PointerEvent,
+    apply: fn(&mut Input, f32, f32),
+    game: &Rc<RefCell<Game>>,
+) {
+    let rect = stick.get_bounding_client_rect();
+    let radius = (rect.width() * 0.5).max(1.0);
+    let mut x = (event.client_x() as f64 - (rect.left() + rect.width() * 0.5)) / radius;
+    let mut y = (event.client_y() as f64 - (rect.top() + rect.height() * 0.5)) / radius;
+    let length = (x * x + y * y).sqrt();
+    if length > 1.0 {
+        x /= length;
+        y /= length;
+    }
+
+    let travel = radius * KNOB_TRAVEL;
+    let _ = knob.style().set_property(
+        "transform",
+        &format!("translate3d({}px, {}px, 0)", x * travel, y * travel),
+    );
+    apply(&mut game.borrow_mut().input, x as f32, y as f32);
+}
+
 fn register_touch_look(document: &Document, game: Rc<RefCell<Game>>) -> Result<(), JsValue> {
     let area = element::<HtmlElement>(document, "touch-look")?;
     let pointer = Rc::new(RefCell::new(None::<(i32, i32, i32)>));
@@ -819,6 +918,27 @@ fn apply_playing_ui(document: &Document, playing: bool) {
     if uses_touch(document) {
         if let Some(controls) = document.get_element_by_id("touch-controls") {
             let _ = controls.set_attribute("aria-hidden", if playing { "false" } else { "true" });
+        }
+        recentre_touch_sticks(document);
+    }
+}
+
+/// Clears the stick visuals so a knob left off-centre by a lost pointer does not stay stuck.
+fn recentre_touch_sticks(document: &Document) {
+    for id in TOUCH_STICK_IDS {
+        let Ok(stick) = element::<HtmlElement>(document, id) else {
+            continue;
+        };
+        let _ = stick.class_list().remove_1("is-active");
+        if let Some(knob) = stick
+            .query_selector(".touch-stick__knob")
+            .ok()
+            .flatten()
+            .and_then(|element| element.dyn_into::<HtmlElement>().ok())
+        {
+            let _ = knob
+                .style()
+                .set_property("transform", "translate3d(0, 0, 0)");
         }
     }
 }

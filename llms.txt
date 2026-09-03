@@ -8,8 +8,9 @@ Click to grab the cursor. WASD to move, space to jump, shift to sprint,
 left click to break, right click to place what you're holding, R for a new
 world. The block you're aiming at is outlined.
 
-On a touchscreen, use the left directional pad to move, drag the right side to
-look around, and use the action buttons to jump, break and place.
+On a touchscreen, the left analog stick walks, the right stick turns the camera,
+dragging anywhere above the sticks also looks around, and the action buttons
+jump, break and place.
 
 Things worth knowing:
 

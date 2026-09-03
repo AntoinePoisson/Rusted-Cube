@@ -80,8 +80,9 @@ since the world is shared.
 | New world | R, offline only |
 | Free the cursor | escape |
 
-On a touchscreen, use the directional pad to move, drag the right side of the
-screen to look around, and use the action buttons to jump, break and place.
+On a touchscreen, the left stick walks (analog: a half push is a half speed),
+the right stick turns the camera, dragging anywhere above the sticks also looks
+around, and the action buttons jump, break and place.
 
 Offline the seed is drawn at random on every load and shown in the corner
 readout. Append `?seed=1337` to the URL to come back to a world you liked.

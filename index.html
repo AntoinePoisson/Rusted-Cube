@@ -109,8 +109,8 @@
           <div><dt>New world</dt><dd>R</dd></div>
         </dl>
         <dl class="controls controls--touch">
-          <div><dt>Move</dt><dd>Left pad</dd></div>
-          <div><dt>Look</dt><dd>Drag right</dd></div>
+          <div><dt>Move</dt><dd>Left stick</dd></div>
+          <div><dt>Look</dt><dd>Right stick or drag</dd></div>
           <div><dt>Actions</dt><dd>On-screen buttons</dd></div>
         </dl>
         <div class="intro__actions">
@@ -158,14 +158,24 @@
         aria-label="Touch game controls"
         aria-hidden="true"
       >
-        <div id="touch-look" class="touch-look" aria-label="Drag to look around">
-          <span>Drag to look</span>
+        <div id="touch-look" class="touch-look" aria-label="Drag to look around"></div>
+        <div
+          id="touch-move"
+          class="touch-stick touch-stick--move"
+          role="group"
+          aria-label="Movement stick"
+        >
+          <span class="touch-stick__knob" aria-hidden="true"></span>
+          <span class="touch-stick__caption" aria-hidden="true">Move</span>
         </div>
-        <div class="touch-move" role="group" aria-label="Movement controls">
-          <button id="touch-forward" type="button" aria-label="Move forward">&#9650;</button>
-          <button id="touch-left" type="button" aria-label="Move left">&#9664;</button>
-          <button id="touch-back" type="button" aria-label="Move backward">&#9660;</button>
-          <button id="touch-right" type="button" aria-label="Move right">&#9654;</button>
+        <div
+          id="touch-camera"
+          class="touch-stick touch-stick--camera"
+          role="group"
+          aria-label="Camera stick"
+        >
+          <span class="touch-stick__knob" aria-hidden="true"></span>
+          <span class="touch-stick__caption" aria-hidden="true">Look</span>
         </div>
         <div class="touch-actions" role="group" aria-label="Game actions">
           <button id="touch-jump" type="button">Jump</button>
