@@ -14,8 +14,10 @@ const GRAVITY: f32 = 24.0;
 const JUMP_SPEED: f32 = 8.5;
 const VOID_LEVEL: f32 = -10.0;
 const MOUSE_SENSITIVITY: f32 = 0.0022;
-/// Radians per second when the on-screen look stick is fully deflected.
-const LOOK_STICK_RATE: f32 = 2.6;
+/// Radians per second when the on-screen look stick is pushed to the rim.
+const LOOK_STICK_RATE: f32 = 1.8;
+/// Below this the stick reads as centred, so a resting thumb never drifts the view.
+const LOOK_STICK_DEADZONE: f32 = 0.12;
 const PITCH_LIMIT: f32 = 1.5;
 
 pub struct Player {
@@ -24,6 +26,19 @@ pub struct Player {
     yaw: f32,
     pitch: f32,
     on_ground: bool,
+}
+
+/// Turns a look-stick position into radians per second. The response is squared so a
+/// small push aims precisely while the rim still turns quickly.
+fn look_stick_rate((x, y): (f32, f32)) -> (f32, f32) {
+    let deflection = (x * x + y * y).sqrt();
+    if deflection <= LOOK_STICK_DEADZONE {
+        return (0.0, 0.0);
+    }
+    // Rescale past the deadzone so the rim still reaches the full rate.
+    let travel = (deflection - LOOK_STICK_DEADZONE) / (1.0 - LOOK_STICK_DEADZONE);
+    let gain = LOOK_STICK_RATE * travel * travel / deflection;
+    (x * gain, y * gain)
 }
 
 impl Player {
@@ -39,9 +54,9 @@ impl Player {
 
     pub fn update(&mut self, input: &mut Input, world: &World, delta: f32) {
         let (mouse_dx, mouse_dy) = input.take_mouse_motion();
-        let (look_x, look_y) = input.look_axis();
-        self.yaw += mouse_dx * MOUSE_SENSITIVITY + look_x * LOOK_STICK_RATE * delta;
-        self.pitch = (self.pitch - mouse_dy * MOUSE_SENSITIVITY - look_y * LOOK_STICK_RATE * delta)
+        let (yaw_rate, pitch_rate) = look_stick_rate(input.look_axis());
+        self.yaw += mouse_dx * MOUSE_SENSITIVITY + yaw_rate * delta;
+        self.pitch = (self.pitch - mouse_dy * MOUSE_SENSITIVITY - pitch_rate * delta)
             .clamp(-PITCH_LIMIT, PITCH_LIMIT);
 
         let forward = Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin());
@@ -186,7 +201,10 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use super::{Player, EYE_HEIGHT, MIN_EYE_HEIGHT, VOID_LEVEL};
+    use super::{
+        look_stick_rate, Player, EYE_HEIGHT, LOOK_STICK_DEADZONE, LOOK_STICK_RATE, MIN_EYE_HEIGHT,
+        VOID_LEVEL,
+    };
     use crate::input::Input;
     use crate::world::{Block, World};
     use glam::{IVec3, Vec3};
@@ -243,5 +261,34 @@ mod tests {
         );
         assert!(eye.y >= 25.0 + MIN_EYE_HEIGHT);
         assert!(eye.y < 25.0 + EYE_HEIGHT, "the camera should have ducked");
+    }
+
+    #[test]
+    fn a_resting_thumb_does_not_drift_the_view() {
+        assert_eq!(look_stick_rate((0.0, 0.0)), (0.0, 0.0));
+        assert_eq!(
+            look_stick_rate((LOOK_STICK_DEADZONE * 0.5, 0.0)),
+            (0.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn the_look_stick_reaches_its_full_rate_at_the_rim() {
+        let (x, y) = look_stick_rate((1.0, 0.0));
+        assert!((x - LOOK_STICK_RATE).abs() < 1e-5);
+        assert_eq!(y, 0.0);
+
+        // Direction is preserved, only the magnitude is shaped.
+        let diagonal = 0.5_f32.sqrt();
+        let (x, y) = look_stick_rate((diagonal, diagonal));
+        assert!((x - y).abs() < 1e-5);
+        assert!(((x * x + y * y).sqrt() - LOOK_STICK_RATE).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_half_pushed_look_stick_turns_far_slower_than_half_rate() {
+        let (x, _) = look_stick_rate((0.5, 0.0));
+        assert!(x > 0.0);
+        assert!(x < LOOK_STICK_RATE * 0.25);
     }
 }

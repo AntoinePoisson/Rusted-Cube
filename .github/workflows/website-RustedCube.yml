@@ -70,15 +70,29 @@ jobs:
           cp docs/screenshot-title.png _site/social-preview.png
           cp -r pkg _site/pkg
 
-          # Keep the deployed page to one render-blocking request.
-          python3 - <<'PY'
+          # Keep the deployed page to one render-blocking request, and stamp the build
+          # id so the wasm glue and the wasm module can never be cached out of sync.
+          BUILD_ID="${GITHUB_SHA::12}" python3 - <<'PY'
+          import os
           from pathlib import Path
+
           html = Path("index.html").read_text()
           css = Path("styles.css").read_text()
-          marker = '<link rel="stylesheet" href="./styles.css" />'
-          if marker not in html:
-              raise SystemExit("stylesheet link not found, update this step")
-          Path("_site/index.html").write_text(html.replace(marker, f"<style>{css}</style>"))
+          build = os.environ["BUILD_ID"]
+
+          replacements = [
+              ('<link rel="stylesheet" href="./styles.css" />', f"<style>{css}</style>"),
+              ('data-build="dev"', f'data-build="{build}"'),
+              ("./bootstrap.js", f"./bootstrap.js?v={build}"),
+              ("./pkg/rusted_cube.js", f"./pkg/rusted_cube.js?v={build}"),
+              ("./pkg/rusted_cube_bg.wasm", f"./pkg/rusted_cube_bg.wasm?v={build}"),
+          ]
+          for marker, value in replacements:
+              if marker not in html:
+                  raise SystemExit(f"{marker!r} not found in index.html, update this step")
+              html = html.replace(marker, value)
+
+          Path("_site/index.html").write_text(html)
           PY
 
           touch _site/.nojekyll

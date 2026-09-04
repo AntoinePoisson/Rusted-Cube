@@ -20,11 +20,16 @@ canvas?.addEventListener("webglcontextrestored", () => {
   reportFailure(new Error("Graphics are available again. Reload the page to rebuild the world."), true);
 });
 
+// The deploy stamps a build id here. Both wasm-pack outputs must carry the same one:
+// a cached glue script paired with a freshly fetched module fails to instantiate.
+const build = root.dataset.build;
+const version = build && build !== "dev" ? `?v=${build}` : "";
+
 // A dynamic import lets us report a useful error when the wasm-pack output is missing.
 async function boot() {
   try {
-    const { default: init } = await import("./pkg/rusted_cube.js");
-    await init();
+    const { default: init } = await import(`./pkg/rusted_cube.js${version}`);
+    await init(new URL(`./pkg/rusted_cube_bg.wasm${version}`, import.meta.url));
   } catch (error) {
     console.error(error);
     reportFailure(error, false);
